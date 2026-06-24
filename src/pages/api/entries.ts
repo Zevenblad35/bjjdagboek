@@ -1,6 +1,6 @@
 import type { APIRoute } from 'astro';
 import { requireUser } from '../../lib/auth';
-import { randomUUID } from 'crypto';
+import { randomUUID } from 'node:crypto';
 
 export const POST: APIRoute = async (ctx) => {
   const db = ctx.locals.runtime?.env?.DB;
