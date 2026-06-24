@@ -1,22 +1,123 @@
-## Development
+---
+import App from '../layouts/App.astro';
+import { createAuth } from '../lib/auth';
 
-When starting the dev server, use background mode:
+const runtime = Astro.locals.runtime;
+  const db = runtime?.env?.DB;
+  const secret = runtime?.env?.BETTER_AUTH_SECRET ?? 'dev-secret-change-me';
+if (!db) return Astro.redirect('/inloggen');
+const auth = createAuth(db, secret);
+const session = await auth.api.getSession({ headers: Astro.request.headers });
+if (!session?.user) return Astro.redirect('/inloggen');
 
-```
-astro dev --background
-```
+const { results: goals } = await db.prepare(
+  'SELECT * FROM goal WHERE user_id = ? ORDER BY status ASC, created_at DESC'
+).bind(session.user.id).all<{id:string;title:string;status:string;category:string}>();
 
-Manage the background server with `astro dev stop`, `astro dev status`, and `astro dev logs`.
+const open   = goals.filter(g => g.status === 'open');
+const bezig  = goals.filter(g => g.status === 'bezig');
+const klaar  = goals.filter(g => g.status === 'klaar');
+---
+<App title="Doelen" page="doelen">
+  <div style="padding:20px 20px 0">
+    <div style="font-size:20px;font-weight:700;color:var(--text-hi);margin-bottom:16px">Doelen & Focus</div>
 
-## Documentation
+    <!-- Nieuw doel -->
+    <div class="card" style="margin-bottom:20px">
+      <div style="font-size:12px;font-family:'Space Mono',monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:10px">Nieuw doel toevoegen</div>
+      <div id="add-error" style="display:none;color:var(--red);font-size:12px;margin-bottom:8px"></div>
+      <div style="display:flex;gap:8px">
+        <input id="goal-input" class="form-input" type="text" placeholder="Bijv. heel hook verdediging leren" style="flex:1" />
+        <button id="add-goal-btn" class="btn btn-primary" style="width:auto;padding:11px 16px;flex-shrink:0">＋</button>
+      </div>
+    </div>
 
-Full documentation: https://docs.astro.build
+    {[
+      { label: 'Bezig', items: bezig, status: 'bezig' },
+      { label: 'Open', items: open, status: 'open' },
+      { label: 'Klaar', items: klaar, status: 'klaar' },
+    ].map(group => group.items.length > 0 && (
+      <div style="margin-bottom:20px">
+        <div class="section-title" style="margin-bottom:10px">{group.label} — {group.items.length}</div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          {group.items.map(g => (
+            <div class="goal-item" data-id={g.id} data-status={g.status}>
+              <div class={`goal-check ${g.status}`} onclick={`toggleGoal('${g.id}', '${g.status}')`}>
+                {g.status === 'klaar' ? '✓' : ''}
+              </div>
+              <div class={`goal-text ${g.status === 'klaar' ? 'done' : ''}`}>{g.title}</div>
+              {g.status !== 'klaar' && (
+                <button
+                  onclick={`progressGoal('${g.id}', '${g.status}')`}
+                  style="background:var(--raised);border:none;border-radius:7px;padding:5px 10px;font-size:11px;color:var(--text-dim);cursor:pointer;font-family:'Space Mono',monospace"
+                >
+                  {g.status === 'open' ? '→ Bezig' : '→ Klaar'}
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    ))}
 
-Consult these guides before working on related tasks:
+    {goals.length === 0 && (
+      <div class="empty" style="padding-top:40px">
+        <div class="empty-icon">🎯</div>
+        <div class="empty-title">Nog geen doelen</div>
+        <div class="empty-sub">Voeg hierboven je eerste leerdoel toe.</div>
+      </div>
+    )}
+  </div>
+</App>
 
-- [Adding pages, dynamic routes, or middleware](https://docs.astro.build/en/guides/routing/)
-- [Working with Astro components](https://docs.astro.build/en/basics/astro-components/)
-- [Using React, Vue, Svelte, or other framework components](https://docs.astro.build/en/guides/framework-components/)
-- [Adding or managing content](https://docs.astro.build/en/guides/content-collections/)
-- [Adding styles or using Tailwind](https://docs.astro.build/en/guides/styling/)
-- [Supporting multiple languages](https://docs.astro.build/en/guides/internationalization/)
+<script>
+async function progressGoal(id: string, currentStatus: string) {
+  const next = currentStatus === 'open' ? 'bezig' : 'klaar';
+  await fetch('/api/goals', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id, status: next }),
+  });
+  window.location.reload();
+}
+
+async function toggleGoal(id: string, currentStatus: string) {
+  const next = currentStatus === 'klaar' ? 'open' : 'klaar';
+  await fetch('/api/goals', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id, status: next }),
+  });
+  window.location.reload();
+}
+
+document.getElementById('add-goal-btn')?.addEventListener('click', async () => {
+  const input = document.getElementById('goal-input') as HTMLInputElement;
+  const errEl = document.getElementById('add-error')!;
+  const title = input.value.trim();
+  if (!title) return;
+
+  errEl.style.display = 'none';
+  const res = await fetch('/api/goals', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title }),
+  });
+
+  if (res.ok) {
+    window.location.reload();
+  } else {
+    errEl.textContent = 'Opslaan mislukt.';
+    errEl.style.display = 'block';
+  }
+});
+
+// Enter key
+document.getElementById('goal-input')?.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') document.getElementById('add-goal-btn')?.click();
+});
+
+// Expose to inline onclick
+(window as any).progressGoal = progressGoal;
+(window as any).toggleGoal = toggleGoal;
+</script>

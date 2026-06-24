@@ -1,10 +1,140 @@
-// @ts-check
-import { defineConfig } from 'astro/config';
-import cloudflare from '@astrojs/cloudflare';
+---
+import App from '../layouts/App.astro';
+import { createAuth } from '../lib/auth';
 
-export default defineConfig({
-  output: 'server',
-  adapter: cloudflare({
-    platformProxy: { enabled: true }
-  }),
+const runtime = Astro.locals.runtime;
+  const db = runtime?.env?.DB;
+  const secret = runtime?.env?.BETTER_AUTH_SECRET ?? 'dev-secret-change-me';
+if (!db) return Astro.redirect('/inloggen');
+const auth = createAuth(db, secret);
+const session = await auth.api.getSession({ headers: Astro.request.headers });
+if (!session?.user) return Astro.redirect('/inloggen');
+
+const today = new Date().toISOString().slice(0,10);
+---
+<App title="Sessie loggen" page="loggen">
+  <div style="padding:20px 20px 0">
+    <div style="font-size:20px;font-weight:700;color:var(--text-hi);margin-bottom:4px">Sessie loggen</div>
+    <div style="font-size:13px;color:var(--muted)">Wat heb je vandaag gedaan?</div>
+  </div>
+
+  <div id="error-msg" style="display:none;margin:12px 20px 0;background:var(--red-bg);color:var(--red);border-radius:10px;padding:12px 14px;font-size:13px"></div>
+
+  <form id="log-form" style="padding:16px 20px 0">
+    <!-- Type -->
+    <div class="form-group">
+      <div class="form-label">Type sessie</div>
+      <div class="type-selector">
+        <button type="button" class="type-btn active-training" data-type="training">🥋 Training</button>
+        <button type="button" class="type-btn" data-type="seminar">📋 Seminar</button>
+        <button type="button" class="type-btn" data-type="competitie">🏆 Competitie</button>
+      </div>
+      <input type="hidden" name="type" value="training" />
+    </div>
+
+    <!-- Datum + duur -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div class="form-group">
+        <label class="form-label">Datum</label>
+        <input class="form-input" type="date" name="date" value={today} required />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Duur (min)</label>
+        <input class="form-input" type="number" name="duration_min" placeholder="90" min="1" max="720" />
+      </div>
+    </div>
+
+    <!-- Locatie -->
+    <div class="form-group">
+      <label class="form-label">Locatie / Gym <span style="color:var(--muted);font-weight:400">(optioneel)</span></label>
+      <input class="form-input" type="text" name="location" placeholder="Bijv. JJ Nijverdal" />
+    </div>
+
+    <!-- Wat ging goed -->
+    <div class="form-group">
+      <label class="form-label">Wat ging goed?</label>
+      <textarea class="form-textarea" name="went_well" placeholder="Bijv. mijn butterfly guard voelde scherp, goede timing bij sweeps…"></textarea>
+    </div>
+
+    <!-- Wat was lastig -->
+    <div class="form-group">
+      <label class="form-label">Waar had je moeite mee?</label>
+      <textarea class="form-textarea" name="struggled_with" placeholder="Bijv. verdediging vanuit half guard, guard passing tempo…"></textarea>
+    </div>
+
+    <!-- Technieken / tags -->
+    <div class="form-group">
+      <label class="form-label">Technieken <span style="color:var(--muted);font-weight:400">(komma's, optioneel)</span></label>
+      <input class="form-input" type="text" name="tags" placeholder="half guard, arm bar, x-guard" />
+    </div>
+
+    <!-- Notities -->
+    <div class="form-group">
+      <label class="form-label">Extra notities <span style="color:var(--muted);font-weight:400">(optioneel)</span></label>
+      <textarea class="form-textarea" name="notes" placeholder="Vrije notities, details die je wilt onthouden…"></textarea>
+    </div>
+
+    <button type="submit" class="btn btn-primary" style="margin-bottom:8px">Sessie opslaan</button>
+  </form>
+</App>
+
+<script>
+// Type selector
+document.querySelectorAll('.type-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const type = btn.getAttribute('data-type')!;
+    document.querySelectorAll('.type-btn').forEach(b => {
+      b.className = 'type-btn';
+    });
+    btn.className = `type-btn active-${type}`;
+    (document.querySelector('input[name="type"]') as HTMLInputElement).value = type;
+  });
 });
+
+// Submit
+document.getElementById('log-form')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const form = e.target as HTMLFormElement;
+  const btn = form.querySelector('button[type="submit"]') as HTMLButtonElement;
+  const errEl = document.getElementById('error-msg')!;
+  const data = new FormData(form);
+
+  btn.textContent = 'Opslaan…';
+  btn.disabled = true;
+  errEl.style.display = 'none';
+
+  const tags = (data.get('tags') as string || '')
+    .split(',').map(t => t.trim()).filter(Boolean);
+
+  try {
+    const res = await fetch('/api/entries', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: data.get('type'),
+        date: data.get('date'),
+        duration_min: data.get('duration_min') ? Number(data.get('duration_min')) : null,
+        location: data.get('location') || null,
+        went_well: data.get('went_well') || null,
+        struggled_with: data.get('struggled_with') || null,
+        notes: data.get('notes') || null,
+        tags,
+      }),
+    });
+
+    if (res.ok) {
+      window.location.href = '/dashboard';
+    } else {
+      errEl.textContent = 'Opslaan mislukt. Probeer het opnieuw.';
+      errEl.style.display = 'block';
+      btn.textContent = 'Sessie opslaan';
+      btn.disabled = false;
+    }
+  } catch {
+    errEl.textContent = 'Er ging iets mis.';
+    errEl.style.display = 'block';
+    btn.textContent = 'Sessie opslaan';
+    btn.disabled = false;
+  }
+});
+</script>
