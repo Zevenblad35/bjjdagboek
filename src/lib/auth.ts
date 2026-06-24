@@ -91,7 +91,7 @@ export function createAuth(db: D1Database, secret: string) {
 
   return betterAuth({
     secret,
-    baseURL: 'https://bjjdagboek.pages.dev',
+    baseURL: 'https://bjjdagboek.nl',
     database: kyselyAdapter(kysely, {
       type: "sqlite",
     }),

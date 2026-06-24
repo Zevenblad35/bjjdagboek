@@ -23,19 +23,16 @@
       "purpose": "any maskable"
     }
   ],
-  "screenshots": [],
   "shortcuts": [
     {
       "name": "Sessie loggen",
       "short_name": "Loggen",
-      "description": "Log een nieuwe training",
       "url": "/loggen",
       "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
     },
     {
       "name": "Doelen",
       "short_name": "Doelen",
-      "description": "Bekijk je leerdoelen",
       "url": "/doelen",
       "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
     }
