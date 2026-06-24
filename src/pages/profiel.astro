@@ -17,6 +17,10 @@ const profile = await db.prepare(
 ).bind(user.id).first<{belt:string;stripes:number;gym:string}>();
 
 const beltNL: Record<string,string> = { white:'Wit', blue:'Blauw', purple:'Paars', brown:'Bruin', black:'Zwart' };
+const beltColors: Record<string,string> = {
+  white:'#f7f9fa', blue:'#2e96ff', purple:'#7e1cc9', brown:'#a35e2c', black:'#1a1817'
+};
+const currentBelt = profile?.belt ?? 'white';
 ---
 <App title="Profiel" page="">
   <div style="padding:20px 20px 0">
@@ -34,12 +38,15 @@ const beltNL: Record<string,string> = { white:'Wit', blue:'Blauw', purple:'Paars
         <input class="form-input" type="email" value={user.email} disabled style="opacity:.6;cursor:not-allowed" />
       </div>
       <div class="form-group">
-        <label class="form-label">Gordel</label>
-        <select class="form-select" name="belt">
-          {['white','blue','purple','brown','black'].map(b => (
-            <option value={b} selected={profile?.belt === b}>{beltNL[b]}</option>
-          ))}
-        </select>
+        <label class="form-label">Belt</label>
+        <div style="display:flex;align-items:center;gap:10px">
+          <div id="belt-preview" style={`width:6px;height:40px;border-radius:3px;background:${beltColors[currentBelt]};flex-shrink:0;transition:background .2s;box-shadow:0 0 8px ${beltColors[currentBelt]}88`}></div>
+          <select class="form-select" name="belt" id="belt-select">
+            {['white','blue','purple','brown','black'].map(b => (
+              <option value={b} selected={profile?.belt === b}>{beltNL[b]}</option>
+            ))}
+          </select>
+        </div>
       </div>
       <div class="form-group">
         <label class="form-label">Strepen (0–4)</label>
@@ -84,6 +91,19 @@ document.getElementById('profile-form')?.addEventListener('submit', async (e) =>
   msg.style.display = 'block';
   setTimeout(() => msg.style.display = 'none', 3000);
   btn.textContent = 'Opslaan'; btn.disabled = false;
+});
+
+// Live belt kleur preview
+const beltColors: Record<string, string> = {
+  white: '#f7f9fa', blue: '#2e96ff', purple: '#7e1cc9',
+  brown: '#a35e2c', black: '#1a1817'
+};
+document.getElementById('belt-select')?.addEventListener('change', (e) => {
+  const val = (e.target as HTMLSelectElement).value;
+  const preview = document.getElementById('belt-preview') as HTMLElement;
+  const color = beltColors[val] || '#f7f9fa';
+  preview.style.background = color;
+  preview.style.boxShadow = `0 0 8px ${color}88`;
 });
 
 document.getElementById('logout-btn')?.addEventListener('click', async () => {

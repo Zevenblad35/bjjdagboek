@@ -23,6 +23,9 @@ const stripes = profile?.stripes ?? 0;
 const beltNL: Record<string,string> = {
   white:'Wit', blue:'Blauw', purple:'Paars', brown:'Bruin', black:'Zwart'
 };
+const beltColors: Record<string,string> = {
+  white:'#f7f9fa', blue:'#2e96ff', purple:'#7e1cc9', brown:'#a35e2c', black:'#1a1817'
+};
 
 const year = new Date().getFullYear();
 const { results: yearEntries } = await db.prepare(
@@ -89,13 +92,17 @@ function fmtDur(min: number) {
 
   <!-- Belt card -->
   <div class="belt-card">
-    <div>
-      <div class="belt-label">Gordel</div>
-      <div class="belt-name">{beltNL[belt]}</div>
-      <div class="belt-stripes">
-        {[0,1,2,3].map(i => (
-          <div class={`stripe ${i < stripes ? 'filled' : ''}`}></div>
-        ))}
+    <div style="display:flex;align-items:center;gap:14px">
+      <!-- Gekleurde belt balk -->
+      <div style={`width:6px;height:64px;border-radius:3px;background:${beltColors[belt]};flex-shrink:0;box-shadow:0 0 12px ${beltColors[belt]}88`}></div>
+      <div>
+        <div class="belt-label">Belt</div>
+        <div class="belt-name">{beltNL[belt]}</div>
+        <div class="belt-stripes">
+          {[0,1,2,3].map(i => (
+            <div class={`stripe ${i < stripes ? 'filled' : ''}`}></div>
+          ))}
+        </div>
       </div>
     </div>
     <div class="belt-stat">
