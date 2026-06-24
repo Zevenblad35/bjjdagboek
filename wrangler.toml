@@ -1,0 +1,9 @@
+name = "bjj-dagboek"
+compatibility_date = "2024-12-01"
+compatibility_flags = ["nodejs_compat"]
+pages_build_output_dir = "dist"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "bjj-dagboek"
+database_id = "VERVANG_MET_JOUW_DATABASE_ID"

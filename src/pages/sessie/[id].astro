@@ -1,0 +1,78 @@
+---
+import App from '../../layouts/App.astro';
+import { createAuth } from '../../lib/auth';
+
+const db = Astro.locals.runtime?.env?.DB;
+if (!db) return Astro.redirect('/inloggen');
+const auth = createAuth(db);
+const session = await auth.api.getSession({ headers: Astro.request.headers });
+if (!session?.user) return Astro.redirect('/inloggen');
+
+const { id } = Astro.params;
+const entry = await db.prepare(
+  'SELECT * FROM entry WHERE id = ? AND user_id = ?'
+).bind(id, session.user.id).first<{id:string;type:string;date:string;duration_min:number;location:string;went_well:string;struggled_with:string;notes:string}>();
+
+if (!entry) return Astro.redirect('/logboek');
+
+const { results: tagRows } = await db.prepare(
+  'SELECT tag FROM entry_tag WHERE entry_id = ?'
+).bind(id).all<{tag:string}>();
+const tags = tagRows.map(r => r.tag);
+
+const typeLabel: Record<string,string> = { training:'Training', seminar:'Seminar', competitie:'Competitie' };
+const typeEmoji: Record<string,string> = { training:'🥋', seminar:'📋', competitie:'🏆' };
+
+function formatDate(d: string) {
+  return new Date(d).toLocaleDateString('nl-NL', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
+}
+---
+<App title={`${typeLabel[entry.type]} ${entry.date}`} page="logboek">
+  <div style="padding:20px 20px 0">
+    <a href="/logboek" style="font-size:13px;color:var(--blue);text-decoration:none;display:inline-flex;align-items:center;gap:4px;margin-bottom:16px">
+      ← Terug
+    </a>
+
+    <!-- Header -->
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+      <div class={`entry-dot dot-${entry.type}`} style="width:11px;height:11px;margin-top:0"></div>
+      <div style="font-size:20px;font-weight:700;color:var(--text-hi)">
+        {typeEmoji[entry.type]} {typeLabel[entry.type]}
+      </div>
+    </div>
+    <div style="font-size:13px;color:var(--muted);margin-bottom:4px">{formatDate(entry.date)}</div>
+    <div style="display:flex;gap:12px;font-size:13px;color:var(--text-dim);margin-bottom:20px">
+      {entry.duration_min && <span>⏱ {entry.duration_min} minuten</span>}
+      {entry.location && <span>📍 {entry.location}</span>}
+    </div>
+
+    {tags.length > 0 && (
+      <div style="margin-bottom:20px">
+        <div class="tags">
+          {tags.map(t => <span class="tag tag-blue">{t}</span>)}
+        </div>
+      </div>
+    )}
+
+    {entry.went_well && (
+      <div class="card" style="margin-bottom:12px;border-left:3px solid var(--green)">
+        <div style="font-size:11px;font-family:'Space Mono',monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--green);margin-bottom:6px">Wat ging goed</div>
+        <div style="font-size:14px;color:var(--text);white-space:pre-wrap">{entry.went_well}</div>
+      </div>
+    )}
+
+    {entry.struggled_with && (
+      <div class="card" style="margin-bottom:12px;border-left:3px solid var(--orange)">
+        <div style="font-size:11px;font-family:'Space Mono',monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--orange);margin-bottom:6px">Moeite mee gehad</div>
+        <div style="font-size:14px;color:var(--text);white-space:pre-wrap">{entry.struggled_with}</div>
+      </div>
+    )}
+
+    {entry.notes && (
+      <div class="card" style="margin-bottom:12px">
+        <div style="font-size:11px;font-family:'Space Mono',monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:6px">Notities</div>
+        <div style="font-size:14px;color:var(--text);white-space:pre-wrap">{entry.notes}</div>
+      </div>
+    )}
+  </div>
+</App>

@@ -1,0 +1,126 @@
+---
+import App from '../layouts/App.astro';
+import { createAuth } from '../lib/auth';
+
+const db = Astro.locals.runtime?.env?.DB;
+if (!db) return Astro.redirect('/inloggen');
+const auth = createAuth(db);
+const session = await auth.api.getSession({ headers: Astro.request.headers });
+if (!session?.user) return Astro.redirect('/inloggen');
+
+const { results: allEntries } = await db.prepare(
+  'SELECT type, date, duration_min FROM entry WHERE user_id = ? ORDER BY date ASC'
+).bind(session.user.id).all<{type:string;date:string;duration_min:number}>();
+
+// Per maand tellen
+const monthCounts: Record<string, number> = {};
+const monthHours: Record<string, number> = {};
+for (const e of allEntries) {
+  const m = e.date.slice(0,7);
+  monthCounts[m] = (monthCounts[m] || 0) + 1;
+  monthHours[m]  = (monthHours[m] || 0) + (e.duration_min || 0);
+}
+
+// Laatste 6 maanden
+const months: string[] = [];
+const d = new Date();
+for (let i = 5; i >= 0; i--) {
+  const dt = new Date(d.getFullYear(), d.getMonth() - i, 1);
+  months.push(`${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}`);
+}
+
+const maxCount = Math.max(...months.map(m => monthCounts[m] || 0), 1);
+
+function monthLabel(m: string) {
+  const [y, mo] = m.split('-');
+  return new Date(Number(y), Number(mo)-1).toLocaleDateString('nl-NL', { month:'short' });
+}
+
+// Type verdeling
+const typeCounts = { training: 0, seminar: 0, competitie: 0 };
+for (const e of allEntries) { typeCounts[e.type as keyof typeof typeCounts]++; }
+const total = allEntries.length || 1;
+
+// Goals stats
+const { results: goalStats } = await db.prepare(
+  "SELECT status, COUNT(*) as cnt FROM goal WHERE user_id = ? GROUP BY status"
+).bind(session.user.id).all<{status:string;cnt:number}>();
+const gMap = Object.fromEntries(goalStats.map(g => [g.status, g.cnt]));
+
+const totalHours = Math.round(allEntries.reduce((s,e) => s + (e.duration_min||0), 0) / 60);
+---
+<App title="Voortgang" page="voortgang">
+  <div style="padding:20px 20px 0">
+    <div style="font-size:20px;font-weight:700;color:var(--text-hi);margin-bottom:20px">Jouw groei</div>
+
+    <!-- Totalen -->
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:20px">
+      <div class="stat-card" style="text-align:center">
+        <div class="stat-label">Sessies</div>
+        <div class="stat-value c-blue" style="font-size:24px">{allEntries.length}</div>
+      </div>
+      <div class="stat-card" style="text-align:center">
+        <div class="stat-label">Mat uren</div>
+        <div class="stat-value c-blue" style="font-size:24px">{totalHours}</div>
+      </div>
+      <div class="stat-card" style="text-align:center">
+        <div class="stat-label">Doelen klaar</div>
+        <div class="stat-value c-green" style="font-size:24px">{gMap['klaar'] || 0}</div>
+      </div>
+    </div>
+
+    <!-- Maand grafiek -->
+    <div class="card" style="margin-bottom:16px">
+      <div class="section-title" style="margin-bottom:14px">Trainingen per maand</div>
+      <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:6px;height:80px">
+        {months.map(m => {
+          const cnt = monthCounts[m] || 0;
+          const pct = Math.round((cnt / maxCount) * 100);
+          const isNow = m === months[5];
+          return (
+            <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;height:100%;justify-content:flex-end">
+              <div style="font-size:10px;font-family:'Space Mono',monospace;color:var(--muted)">{cnt || ''}</div>
+              <div style={`width:100%;border-radius:5px 5px 0 0;background:${isNow ? 'var(--blue)' : 'var(--blue-light)'};height:${Math.max(pct,4)}%`}></div>
+              <div style={`font-size:10px;font-family:'Space Mono',monospace;color:${isNow ? 'var(--blue)' : 'var(--muted)'};font-weight:${isNow ? '700':'400'}`}>{monthLabel(m)}</div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+
+    <!-- Type verdeling -->
+    <div class="card" style="margin-bottom:16px">
+      <div class="section-title" style="margin-bottom:14px">Type sessies</div>
+      {(['training','seminar','competitie'] as const).map(type => {
+        const cnt = typeCounts[type];
+        const pct = Math.round((cnt / total) * 100);
+        const colors: Record<string,string> = { training:'var(--blue)', seminar:'var(--orange)', competitie:'var(--red)' };
+        const labels: Record<string,string> = { training:'Training', seminar:'Seminar', competitie:'Competitie' };
+        return (
+          <div style="margin-bottom:12px">
+            <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+              <span style="font-size:13px;font-weight:500;color:var(--text)">{labels[type]}</span>
+              <span style="font-size:11px;font-family:'Space Mono',monospace;color:var(--muted)">{cnt} ({pct}%)</span>
+            </div>
+            <div style="height:5px;background:var(--raised);border-radius:3px;overflow:hidden">
+              <div style={`height:100%;border-radius:3px;background:${colors[type]};width:${pct}%`}></div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+
+    <!-- Goals overzicht -->
+    <div class="card" style="margin-bottom:20px">
+      <div class="section-title" style="margin-bottom:12px">Doelen overzicht</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;text-align:center">
+        {[['open','Open','var(--muted)'],['bezig','Bezig','var(--blue)'],['klaar','Klaar','var(--green)']].map(([s,l,c]) => (
+          <div>
+            <div style={`font-size:24px;font-weight:700;color:${c}`}>{gMap[s as string] || 0}</div>
+            <div style="font-size:11px;color:var(--muted);font-family:'Space Mono',monospace">{l}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  </div>
+</App>

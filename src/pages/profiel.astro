@@ -1,0 +1,90 @@
+---
+import App from '../layouts/App.astro';
+import { createAuth } from '../lib/auth';
+
+const db = Astro.locals.runtime?.env?.DB;
+if (!db) return Astro.redirect('/inloggen');
+const auth = createAuth(db);
+const session = await auth.api.getSession({ headers: Astro.request.headers });
+if (!session?.user) return Astro.redirect('/inloggen');
+
+const user = session.user;
+const profile = await db.prepare(
+  'SELECT * FROM profile WHERE user_id = ?'
+).bind(user.id).first<{belt:string;stripes:number;gym:string}>();
+
+const beltNL: Record<string,string> = { white:'Wit', blue:'Blauw', purple:'Paars', brown:'Bruin', black:'Zwart' };
+---
+<App title="Profiel" page="">
+  <div style="padding:20px 20px 0">
+    <div style="font-size:20px;font-weight:700;color:var(--text-hi);margin-bottom:20px">Profiel</div>
+
+    <div id="save-msg" style="display:none;background:var(--green-bg);color:var(--green);border-radius:10px;padding:12px 14px;font-size:13px;margin-bottom:14px">✓ Opgeslagen</div>
+
+    <form id="profile-form">
+      <div class="form-group">
+        <label class="form-label">Naam</label>
+        <input class="form-input" type="text" name="name" value={user.name || ''} required />
+      </div>
+      <div class="form-group">
+        <label class="form-label">E-mailadres</label>
+        <input class="form-input" type="email" value={user.email} disabled style="opacity:.6;cursor:not-allowed" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Gordel</label>
+        <select class="form-select" name="belt">
+          {['white','blue','purple','brown','black'].map(b => (
+            <option value={b} selected={profile?.belt === b}>{beltNL[b]}</option>
+          ))}
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Strepen (0–4)</label>
+        <select class="form-select" name="stripes">
+          {[0,1,2,3,4].map(n => (
+            <option value={n} selected={profile?.stripes === n}>{n}</option>
+          ))}
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Gym / Club <span style="color:var(--muted);font-weight:400">(optioneel)</span></label>
+        <input class="form-input" type="text" name="gym" value={profile?.gym || ''} placeholder="Bijv. JJ Nijverdal" />
+      </div>
+      <button type="submit" class="btn btn-primary">Opslaan</button>
+    </form>
+
+    <div style="margin-top:24px;padding-top:20px;border-top:1px solid var(--border)">
+      <button id="logout-btn" class="btn btn-ghost" style="width:100%">Uitloggen</button>
+    </div>
+  </div>
+</App>
+
+<script>
+document.getElementById('profile-form')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const form = e.target as HTMLFormElement;
+  const data = new FormData(form);
+  const btn = form.querySelector('button[type="submit"]') as HTMLButtonElement;
+  btn.textContent = 'Opslaan…'; btn.disabled = true;
+
+  await fetch('/api/profiel', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      belt: data.get('belt'),
+      stripes: Number(data.get('stripes')),
+      gym: data.get('gym') || null,
+    }),
+  });
+
+  const msg = document.getElementById('save-msg')!;
+  msg.style.display = 'block';
+  setTimeout(() => msg.style.display = 'none', 3000);
+  btn.textContent = 'Opslaan'; btn.disabled = false;
+});
+
+document.getElementById('logout-btn')?.addEventListener('click', async () => {
+  await fetch('/api/auth/sign-out', { method: 'POST' });
+  window.location.href = '/inloggen';
+});
+</script>

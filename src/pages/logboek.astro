@@ -1,0 +1,69 @@
+---
+import App from '../layouts/App.astro';
+import { createAuth } from '../lib/auth';
+
+const db = Astro.locals.runtime?.env?.DB;
+if (!db) return Astro.redirect('/inloggen');
+const auth = createAuth(db);
+const session = await auth.api.getSession({ headers: Astro.request.headers });
+if (!session?.user) return Astro.redirect('/inloggen');
+
+const { results: entries } = await db.prepare(
+  `SELECT e.*, GROUP_CONCAT(t.tag) as tags
+   FROM entry e
+   LEFT JOIN entry_tag t ON t.entry_id = e.id
+   WHERE e.user_id = ?
+   GROUP BY e.id
+   ORDER BY e.date DESC, e.created_at DESC`
+).bind(session.user.id).all<{id:string;type:string;date:string;duration_min:number;location:string;tags:string}>();
+
+function formatDate(d: string) {
+  return new Date(d).toLocaleDateString('nl-NL', { weekday:'short', day:'numeric', month:'short' });
+}
+function fmtDur(min: number) {
+  if (!min) return '';
+  const h = Math.floor(min/60), m = min%60;
+  return h ? `${h}:${String(m).padStart(2,'0')}` : `${m}m`;
+}
+---
+<App title="Logboek" page="logboek">
+  <div style="padding:20px 20px 0">
+    <div style="font-size:20px;font-weight:700;color:var(--text-hi);margin-bottom:4px">Logboek</div>
+    <div style="font-size:13px;color:var(--muted)">{entries.length} sessies totaal</div>
+  </div>
+
+  <div style="padding:16px 20px 0;display:flex;flex-direction:column;gap:8px">
+    {entries.length === 0 ? (
+      <div class="empty" style="padding-top:40px">
+        <div class="empty-icon">🥋</div>
+        <div class="empty-title">Nog geen sessies</div>
+        <div class="empty-sub">Log je eerste training via de + knop.</div>
+      </div>
+    ) : entries.map(e => {
+      const tagArr = e.tags ? e.tags.split(',').filter(Boolean) : [];
+      return (
+        <a href={`/sessie/${e.id}`} class="entry-card">
+          <div style="padding-top:5px">
+            <div class={`entry-dot dot-${e.type}`}></div>
+          </div>
+          <div class="entry-body">
+            <div class="entry-title">
+              {e.type.charAt(0).toUpperCase() + e.type.slice(1)}
+              {e.location ? ` — ${e.location}` : ''}
+            </div>
+            <div class="entry-meta">
+              <span>{formatDate(e.date)}</span>
+              {e.duration_min && <span>{e.duration_min} min</span>}
+            </div>
+            {tagArr.length > 0 && (
+              <div class="tags">
+                {tagArr.slice(0,4).map(t => <span class="tag tag-blue">{t}</span>)}
+              </div>
+            )}
+          </div>
+          {e.duration_min && <div class="entry-dur">{fmtDur(e.duration_min)}</div>}
+        </a>
+      );
+    })}
+  </div>
+</App>

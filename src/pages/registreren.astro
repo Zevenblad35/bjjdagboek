@@ -1,0 +1,94 @@
+---
+import Auth from '../layouts/Auth.astro';
+---
+<Auth title="Registreren">
+<div class="auth-page">
+  <div class="auth-card">
+    <div class="auth-logo">
+      <div style="width:48px;height:48px;background:var(--blue);border-radius:14px;display:grid;place-items:center;color:white;font-size:24px;margin:0 auto 12px">⬡</div>
+      <div style="font-family:'Space Mono',monospace;font-size:12px;color:var(--muted);letter-spacing:.06em">BJJ DAGBOEK</div>
+    </div>
+    <div class="auth-title">Account aanmaken</div>
+    <div class="auth-sub">Gratis, altijd. Geen creditcard nodig.</div>
+
+    <div id="error-msg" style="display:none;background:var(--red-bg);color:var(--red);border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:14px"></div>
+
+    <form id="register-form">
+      <div class="form-group">
+        <label class="form-label">Naam</label>
+        <input class="form-input" type="text" name="name" required autocomplete="name" placeholder="Jouw naam" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">E-mailadres</label>
+        <input class="form-input" type="email" name="email" required autocomplete="email" placeholder="jij@example.com" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Wachtwoord</label>
+        <input class="form-input" type="password" name="password" required autocomplete="new-password" placeholder="Min. 8 tekens" minlength="8" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Gordel <span style="color:var(--muted);font-weight:400">(optioneel)</span></label>
+        <select class="form-select" name="belt">
+          <option value="white">Wit</option>
+          <option value="blue">Blauw</option>
+          <option value="purple">Paars</option>
+          <option value="brown">Bruin</option>
+          <option value="black">Zwart</option>
+        </select>
+      </div>
+      <button type="submit" class="btn btn-primary" style="margin-top:4px">Account aanmaken</button>
+    </form>
+
+    <div class="auth-link">
+      Al een account? <a href="/inloggen">Inloggen</a>
+    </div>
+  </div>
+</div>
+
+<script>
+document.getElementById('register-form')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const form = e.target as HTMLFormElement;
+  const btn = form.querySelector('button[type="submit"]') as HTMLButtonElement;
+  const errEl = document.getElementById('error-msg')!;
+  const data = new FormData(form);
+
+  btn.textContent = 'Account aanmaken…';
+  btn.disabled = true;
+  errEl.style.display = 'none';
+
+  try {
+    const res = await fetch('/api/auth/sign-up/email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: data.get('name'),
+        email: data.get('email'),
+        password: data.get('password'),
+      }),
+    });
+
+    if (res.ok) {
+      // Profiel aanmaken met gordel
+      await fetch('/api/profiel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ belt: data.get('belt') || 'white' }),
+      }).catch(() => {});
+      window.location.href = '/dashboard';
+    } else {
+      const json = await res.json().catch(() => ({}));
+      errEl.textContent = json.message || 'Registreren mislukt. Probeer een ander e-mailadres.';
+      errEl.style.display = 'block';
+      btn.textContent = 'Account aanmaken';
+      btn.disabled = false;
+    }
+  } catch {
+    errEl.textContent = 'Er ging iets mis. Probeer het opnieuw.';
+    errEl.style.display = 'block';
+    btn.textContent = 'Account aanmaken';
+    btn.disabled = false;
+  }
+});
+</script>
+</Auth>

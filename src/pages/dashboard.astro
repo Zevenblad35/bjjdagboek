@@ -1,0 +1,179 @@
+---
+import App from '../layouts/App.astro';
+import { createAuth } from '../lib/auth';
+
+const db = Astro.locals.runtime?.env?.DB;
+if (!db) return Astro.redirect('/inloggen');
+
+const auth = createAuth(db);
+const session = await auth.api.getSession({ headers: Astro.request.headers });
+if (!session?.user) return Astro.redirect('/inloggen');
+
+const user = session.user;
+
+// Haal profiel op
+const profile = await db.prepare(
+  'SELECT * FROM profile WHERE user_id = ?'
+).bind(user.id).first<{belt:string;stripes:number;gym:string}>();
+
+const belt = profile?.belt ?? 'white';
+const stripes = profile?.stripes ?? 0;
+
+const beltNL: Record<string,string> = {
+  white:'Wit', blue:'Blauw', purple:'Paars', brown:'Bruin', black:'Zwart'
+};
+
+// Stats
+const year = new Date().getFullYear();
+const { results: yearEntries } = await db.prepare(
+  "SELECT duration_min FROM entry WHERE user_id = ? AND date LIKE ?"
+).bind(user.id, `${year}-%`).all<{duration_min:number}>();
+
+const totalYear = yearEntries.length;
+const totalHours = Math.round(yearEntries.reduce((s,e) => s + (e.duration_min||0), 0) / 60);
+
+const monthStart = new Date(); monthStart.setDate(1);
+const monthStr = monthStart.toISOString().slice(0,7);
+const { results: monthEntries } = await db.prepare(
+  "SELECT id FROM entry WHERE user_id = ? AND date LIKE ?"
+).bind(user.id, `${monthStr}-%`).all();
+const totalMonth = monthEntries.length;
+
+// Goals
+const { results: goals } = await db.prepare(
+  "SELECT * FROM goal WHERE user_id = ? AND status != 'klaar' ORDER BY created_at DESC LIMIT 4"
+).bind(user.id).all<{id:string;title:string;status:string}>();
+
+// Recente entries
+const { results: entries } = await db.prepare(
+  "SELECT e.*, GROUP_CONCAT(t.tag) as tags FROM entry e LEFT JOIN entry_tag t ON t.entry_id = e.id WHERE e.user_id = ? GROUP BY e.id ORDER BY e.date DESC, e.created_at DESC LIMIT 3"
+).bind(user.id).all<{id:string;type:string;date:string;duration_min:number;location:string;tags:string}>();
+
+const firstName = user.name?.split(' ')[0] ?? 'atleet';
+
+function formatDate(d: string) {
+  return new Date(d).toLocaleDateString('nl-NL', { weekday:'short', day:'numeric', month:'short' });
+}
+function fmtDur(min: number) {
+  if (!min) return '';
+  const h = Math.floor(min/60), m = min%60;
+  return h ? `${h}:${String(m).padStart(2,'0')}` : `${m}m`;
+}
+---
+<App title="Dashboard" page="home">
+  <!-- Greeting -->
+  <div style="padding:18px 20px 0">
+    <div style="font-size:12px;color:var(--muted);font-family:'Space Mono',monospace;margin-bottom:2px">
+      {new Date().toLocaleDateString('nl-NL', { weekday:'long', day:'numeric', month:'long' })}
+    </div>
+    <div style="font-size:22px;font-weight:700;color:var(--text-hi)">
+      Goedendag, {firstName} 👋
+    </div>
+  </div>
+
+  <!-- Belt card -->
+  <div class="belt-card">
+    <div>
+      <div class="belt-label">Gordel</div>
+      <div class="belt-name">{beltNL[belt]}</div>
+      <div class="belt-stripes">
+        {[0,1,2,3].map(i => (
+          <div class={`stripe ${i < stripes ? 'filled' : ''}`}></div>
+        ))}
+      </div>
+    </div>
+    <div class="belt-stat">
+      <div class="belt-stat-val">{totalYear}</div>
+      <div class="belt-stat-label">trainingen</div>
+      <div class="belt-stat-label" style="margin-top:4px;font-size:10px;opacity:.7">dit jaar</div>
+    </div>
+  </div>
+
+  <!-- Stats -->
+  <div class="stats-row">
+    <div class="stat-card">
+      <div class="stat-label">Deze maand</div>
+      <div class="stat-value c-green">{totalMonth}</div>
+      <div class="stat-sub">sessies</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Mat uren</div>
+      <div class="stat-value c-blue">{totalHours}<span style="font-size:16px;color:var(--muted)">u</span></div>
+      <div class="stat-sub">dit jaar</div>
+    </div>
+  </div>
+
+  <!-- Log button -->
+  <a href="/loggen" class="log-btn">
+    <div class="log-btn-icon">＋</div>
+    Sessie loggen
+  </a>
+
+  <!-- Recente sessies -->
+  <div class="section" style="padding-top:22px">
+    <div class="section-hd">
+      <div class="section-title">Recente sessies</div>
+      <a href="/logboek" class="section-link">Alles →</a>
+    </div>
+    {entries.length === 0 ? (
+      <div class="empty">
+        <div class="empty-icon">🥋</div>
+        <div class="empty-title">Nog geen sessies</div>
+        <div class="empty-sub">Log je eerste training hierboven.</div>
+      </div>
+    ) : (
+      <div style="display:flex;flex-direction:column;gap:8px">
+        {entries.map(e => {
+          const tagArr = e.tags ? e.tags.split(',').filter(Boolean) : [];
+          return (
+            <a href={`/sessie/${e.id}`} class="entry-card">
+              <div style="padding-top:5px">
+                <div class={`entry-dot dot-${e.type}`}></div>
+              </div>
+              <div class="entry-body">
+                <div class="entry-title">
+                  {e.type.charAt(0).toUpperCase() + e.type.slice(1)}
+                  {e.location ? ` — ${e.location}` : ''}
+                </div>
+                <div class="entry-meta">
+                  <span>{formatDate(e.date)}</span>
+                  {e.duration_min && <span>{e.duration_min} min</span>}
+                </div>
+                {tagArr.length > 0 && (
+                  <div class="tags">
+                    {tagArr.slice(0,3).map(t => <span class="tag tag-blue">{t}</span>)}
+                  </div>
+                )}
+              </div>
+              {e.duration_min && <div class="entry-dur">{fmtDur(e.duration_min)}</div>}
+            </a>
+          );
+        })}
+      </div>
+    )}
+  </div>
+
+  <!-- Doelen -->
+  <div class="section" style="padding-top:22px;padding-bottom:20px">
+    <div class="section-hd">
+      <div class="section-title">Actieve doelen</div>
+      <a href="/doelen" class="section-link">Beheren →</a>
+    </div>
+    {goals.length === 0 ? (
+      <div class="empty" style="padding:24px 20px">
+        <div class="empty-title">Nog geen doelen</div>
+        <div class="empty-sub">Stel een leerdoel in via de Doelen tab.</div>
+      </div>
+    ) : (
+      <div style="display:flex;flex-direction:column;gap:8px">
+        {goals.map(g => (
+          <div class="goal-item">
+            <div class={`goal-check ${g.status}`}>{g.status === 'klaar' ? '✓' : ''}</div>
+            <div class={`goal-text ${g.status === 'klaar' ? 'done' : ''}`}>{g.title}</div>
+            <span style="color:var(--muted);font-size:14px">›</span>
+          </div>
+        ))}
+      </div>
+    )}
+  </div>
+</App>
