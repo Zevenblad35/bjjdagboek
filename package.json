@@ -21,8 +21,5 @@
     "drizzle-orm": "^0.45.2",
     "kysely": "^0.29.2",
     "wrangler": "^4.104.0"
-  },
-  "devDependencies": {
-    "esbuild": "^0.28.1"
   }
 }
