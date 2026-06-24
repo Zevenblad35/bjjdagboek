@@ -3,69 +3,66 @@ import { join } from 'path';
 
 console.log('Postbuild: Cloudflare Pages structuur opbouwen...');
 
-const dist = './dist';
-const client = './dist/client';
-const server = './dist/server';
+const dist     = './dist';
+const client   = './dist/client';
+const server   = './dist/server';
 
-// Verwijder wrangler.jsonc/json die Astro aanmaakt in repo root
+// ── 1. Verwijder wrangler.jsonc/json die Astro in de repo root aanmaakt ──
 for (const f of ['wrangler.jsonc', 'wrangler.json']) {
-  if (existsSync(f)) {
-    unlinkSync(f);
-    console.log(`${f} verwijderd`);
-  }
+  if (existsSync(f)) { unlinkSync(f); console.log(`${f} verwijderd uit repo root`); }
 }
 
-// Patch dist/server/wrangler.json: zorg dat nodejs_compat erin zit
-const serverWrangler = join(server, 'wrangler.json');
-if (existsSync(serverWrangler)) {
-  const wCfg = JSON.parse(readFileSync(serverWrangler, 'utf-8'));
-  wCfg.compatibility_flags = ['nodejs_compat'];
-  wCfg.compatibility_date = '2024-12-01';
-  // Zorg dat D1 binding er ook in zit (komt uit wrangler.toml)
-  if (!wCfg.d1_databases?.find(d => d.binding === 'DB')) {
-    wCfg.d1_databases = wCfg.d1_databases || [];
-    // Database ID wordt gelezen uit Cloudflare Pages settings
-  }
-  writeFileSync(serverWrangler, JSON.stringify(wCfg, null, 2));
-  console.log('dist/server/wrangler.json gepatcht met nodejs_compat');
-}
+// ── 2. Vervang dist/server/wrangler.json met een schone versie ──
+//    Astro genereert hier een bestand vol ongeldige velden.
+//    Cloudflare Pages leest dit bestand en crasht daarop.
+//    We schrijven een minimale geldige versie.
+const cleanWrangler = {
+  name: "bjj-dagboek",
+  compatibility_date: "2024-12-01",
+  compatibility_flags: ["nodejs_compat"],
+  main: "entry.mjs",
+  assets: { directory: "../client" },
+  d1_databases: [
+    {
+      binding: "DB",
+      database_name: "bjj-dagboek",
+      database_id: "VERVANG_MET_JOUW_DATABASE_ID"
+    }
+  ]
+};
+writeFileSync(join(server, 'wrangler.json'), JSON.stringify(cleanWrangler, null, 2));
+console.log('dist/server/wrangler.json vervangen door schone versie');
 
-// Kopieer static assets van dist/client naar dist root
+// ── 3. Static assets van dist/client naar dist root ──
 if (existsSync(client)) {
   for (const item of readdirSync(client)) {
-    const src = join(client, item);
-    const dst = join(dist, item);
-    try {
-      cpSync(src, dst, { recursive: true, force: true });
-    } catch(e) {}
+    try { cpSync(join(client, item), join(dist, item), { recursive: true, force: true }); } catch(e) {}
   }
   console.log('Static assets gekopieerd naar dist/');
 }
 
-// Kopieer server chunks naar dist
+// ── 4. Server chunks naar dist ──
 if (existsSync(join(server, 'chunks'))) {
   mkdirSync(join(dist, 'chunks'), { recursive: true });
   cpSync(join(server, 'chunks'), join(dist, 'chunks'), { recursive: true, force: true });
-  console.log('Server chunks gekopieerd naar dist/chunks/');
+  console.log('Chunks gekopieerd naar dist/chunks/');
 }
 
-// Kopieer virtual middleware
+// ── 5. Virtual middleware ──
 const vmw = join(server, 'virtual_astro_middleware.mjs');
-if (existsSync(vmw)) {
-  copyFileSync(vmw, join(dist, 'virtual_astro_middleware.mjs'));
-}
+if (existsSync(vmw)) copyFileSync(vmw, join(dist, 'virtual_astro_middleware.mjs'));
 
-// Maak _worker.js
+// ── 6. _worker.js ──
 const entry = readFileSync(join(server, 'entry.mjs'), 'utf-8');
 writeFileSync(join(dist, '_worker.js'), entry);
 console.log('_worker.js aangemaakt in dist/');
 
-// _routes.json
-const routes = {
+// ── 7. _routes.json ──
+writeFileSync(join(dist, '_routes.json'), JSON.stringify({
   version: 1,
   include: ['/*'],
   exclude: ['/_astro/*', '/icons/*', '/manifest.json', '/sw.js', '/favicon.ico', '/favicon.svg']
-};
-writeFileSync(join(dist, '_routes.json'), JSON.stringify(routes, null, 2));
+}, null, 2));
 console.log('_routes.json aangemaakt');
+
 console.log('Postbuild klaar!');
