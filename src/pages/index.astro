@@ -1,14 +1,12 @@
 ---
 import { createAuth } from '../lib/auth';
+import { getDB, getSecret } from '../lib/runtime';
 
 let isLoggedIn = false;
 try {
-  const db = Astro.locals.runtime?.env?.DB;
-  if (db) {
-    const auth = createAuth(db);
-    const session = await auth.api.getSession({ headers: Astro.request.headers });
-    isLoggedIn = !!session?.user;
-  }
+  const auth = createAuth(getDB(), getSecret());
+  const session = await auth.api.getSession({ headers: Astro.request.headers });
+  isLoggedIn = !!session?.user;
 } catch (e) {}
 
 return Astro.redirect(isLoggedIn ? '/dashboard' : '/inloggen');

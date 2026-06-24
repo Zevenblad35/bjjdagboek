@@ -11,7 +11,7 @@ import Auth from '../layouts/Auth.astro';
     <div class="auth-title">Account aanmaken</div>
     <div class="auth-sub">Gratis, altijd. Geen creditcard nodig.</div>
 
-    <div id="error-msg" style="display:none;background:var(--red-bg);color:var(--red);border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:14px"></div>
+    <div id="error-msg" style="display:none;background:var(--red-bg);color:var(--red);border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:14px;word-break:break-word"></div>
 
     <form id="register-form">
       <div class="form-group">
@@ -68,8 +68,13 @@ document.getElementById('register-form')?.addEventListener('submit', async (e) =
       }),
     });
 
+    // Toon altijd de volledige response voor debugging
+    const text = await res.text();
+    let json: any = {};
+    try { json = JSON.parse(text); } catch(e) {}
+
     if (res.ok) {
-      // Profiel aanmaken met gordel
+      // Profiel aanmaken
       await fetch('/api/profiel', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -77,14 +82,15 @@ document.getElementById('register-form')?.addEventListener('submit', async (e) =
       }).catch(() => {});
       window.location.href = '/dashboard';
     } else {
-      const json = await res.json().catch(() => ({}));
-      errEl.textContent = json.message || 'Registreren mislukt. Probeer een ander e-mailadres.';
+      // Toon de echte fout inclusief status code
+      const msg = json.message || json.error || text || 'Onbekende fout';
+      errEl.textContent = `Fout ${res.status}: ${msg}`;
       errEl.style.display = 'block';
       btn.textContent = 'Account aanmaken';
       btn.disabled = false;
     }
-  } catch {
-    errEl.textContent = 'Er ging iets mis. Probeer het opnieuw.';
+  } catch (err: any) {
+    errEl.textContent = `Netwerkfout: ${err.message}`;
     errEl.style.display = 'block';
     btn.textContent = 'Account aanmaken';
     btn.disabled = false;

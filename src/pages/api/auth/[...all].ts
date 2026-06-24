@@ -1,10 +1,17 @@
 import type { APIRoute } from 'astro';
 import { createAuth } from '../../../lib/auth';
+import { getDB, getSecret } from '../../../lib/runtime';
 
 export const ALL: APIRoute = async (ctx) => {
-  const db = ctx.locals.runtime?.env?.DB;
-  if (!db) return new Response('Database niet beschikbaar', { status: 500 });
-  const secret = ctx.locals.runtime?.env?.BETTER_AUTH_SECRET ?? 'dev-secret-change-me';
-  const auth = createAuth(db, secret);
-  return auth.handler(ctx.request);
+  try {
+    const db = getDB();
+    const secret = getSecret();
+    const auth = createAuth(db, secret);
+    return auth.handler(ctx.request);
+  } catch (e: any) {
+    return new Response(JSON.stringify({ error: e.message }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
 };

@@ -1,17 +1,15 @@
 ---
 import '../styles/global.css';
 import { createAuth } from '../lib/auth';
+import { getDB, getSecret } from '../lib/runtime';
 
 const { title = 'BJJ Dagboek', page = '' } = Astro.props;
 
 let user = null;
 try {
-  const runtime = Astro.locals.runtime;
-  if (runtime?.env?.DB) {
-    const auth = createAuth(runtime.env.DB);
-    const session = await auth.api.getSession({ headers: Astro.request.headers });
-    user = session?.user ?? null;
-  }
+  const auth = createAuth(getDB(), getSecret());
+  const session = await auth.api.getSession({ headers: Astro.request.headers });
+  user = session?.user ?? null;
 } catch (e) {}
 
 const initials = user?.name
@@ -23,23 +21,13 @@ const initials = user?.name
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
-
-  <!-- PWA -->
   <link rel="manifest" href="/manifest.json" />
   <meta name="theme-color" content="#1A3A6B" />
-
-  <!-- iOS -->
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="apple-mobile-web-app-title" content="BJJ Dagboek" />
   <link rel="apple-touch-icon" href="/icons/icon-192.png" />
-
-  <!-- Android -->
   <meta name="mobile-web-app-capable" content="yes" />
-
-  <!-- SEO -->
-  <meta name="description" content="Log je BJJ trainingen, seminars en competities. Volg je groei." />
-
   <title>{title} — BJJ Dagboek</title>
 </head>
 <body>
@@ -86,27 +74,12 @@ const initials = user?.name
     </nav>
   )}
 </div>
-
-<!-- Service Worker registratie -->
 <script>
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('/sw.js', { scope: '/' })
-        .catch(() => {}); // Stil falen — geen crash als SW niet werkt
+      navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => {});
     });
   }
-
-  // PWA install prompt opslaan voor later gebruik
-  window.addEventListener('beforeinstallprompt', (e) => {
-    e.preventDefault();
-    (window as any).__installPrompt = e;
-    // Toon install banner na 3 pagina's bezoek
-    const visits = Number(localStorage.getItem('pwa_visits') || 0) + 1;
-    localStorage.setItem('pwa_visits', String(visits));
-    if (visits === 3) {
-      document.dispatchEvent(new CustomEvent('pwa:installable'));
-    }
-  });
 </script>
 </body>
 </html>

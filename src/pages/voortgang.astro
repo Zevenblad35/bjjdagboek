@@ -1,12 +1,13 @@
 ---
 import App from '../layouts/App.astro';
 import { createAuth } from '../lib/auth';
+import { getDB, getSecret } from '../lib/runtime';
 
-const runtime = Astro.locals.runtime;
-  const db = runtime?.env?.DB;
-  const secret = runtime?.env?.BETTER_AUTH_SECRET ?? 'dev-secret-change-me';
-if (!db) return Astro.redirect('/inloggen');
-const auth = createAuth(db, secret);
+
+  
+  
+
+const db = getDB(); const auth = createAuth(db, getSecret());
 const session = await auth.api.getSession({ headers: Astro.request.headers });
 if (!session?.user) return Astro.redirect('/inloggen');
 
