@@ -1,0 +1,15 @@
+---
+import Auth from '../layouts/Auth.astro';
+---
+<Auth title="Offline">
+<div style="min-height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px 24px;text-align:center;font-family:'Space Grotesk',sans-serif;background:#F2F5FB;color:#2A3158">
+  <div style="font-size:56px;margin-bottom:16px">📵</div>
+  <div style="font-size:20px;font-weight:700;color:#0F1730;margin-bottom:8px">Geen verbinding</div>
+  <div style="font-size:14px;color:#9AA3BC;max-width:280px;margin-bottom:28px">
+    Je bent offline. Verbind je internet en probeer opnieuw.
+  </div>
+  <button onclick="window.location.reload()" style="background:#1A3A6B;color:white;border:none;padding:13px 24px;border-radius:12px;font-size:14px;font-weight:700;cursor:pointer;font-family:'Space Grotesk',sans-serif">
+    Opnieuw proberen
+  </button>
+</div>
+</Auth>

@@ -1,12 +1,12 @@
 import { betterAuth } from "better-auth";
+import { kyselyAdapter } from "@better-auth/kysely-adapter";
 
-export function createAuth(db: D1Database) {
+export function createAuth(db: D1Database, secret: string) {
   return betterAuth({
-    database: {
+    secret,
+    database: kyselyAdapter(db as any, {
       type: "sqlite",
-      // @ts-ignore
-      db: db,
-    },
+    }),
     emailAndPassword: {
       enabled: true,
       minPasswordLength: 8,
@@ -19,8 +19,8 @@ export function createAuth(db: D1Database) {
   });
 }
 
-export async function requireUser(request: Request, db: D1Database) {
-  const auth = createAuth(db);
+export async function requireUser(request: Request, db: D1Database, secret: string) {
+  const auth = createAuth(db, secret);
   const session = await auth.api.getSession({ headers: request.headers });
   if (!session?.user) return null;
   return session.user;

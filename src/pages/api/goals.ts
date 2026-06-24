@@ -4,8 +4,9 @@ import { randomUUID } from 'crypto';
 
 export const POST: APIRoute = async (ctx) => {
   const db = ctx.locals.runtime?.env?.DB;
+  const secret = ctx.locals.runtime?.env?.BETTER_AUTH_SECRET ?? 'dev-secret-change-me';
   if (!db) return new Response('DB niet beschikbaar', { status: 500 });
-  const user = await requireUser(ctx.request.clone(), db);
+  const user = await requireUser(ctx.request.clone(), db, secret);
   if (!user) return new Response('Niet ingelogd', { status: 401 });
 
   const { title, category = 'techniek' } = await ctx.request.json();
@@ -21,8 +22,9 @@ export const POST: APIRoute = async (ctx) => {
 
 export const PATCH: APIRoute = async (ctx) => {
   const db = ctx.locals.runtime?.env?.DB;
+  const secret = ctx.locals.runtime?.env?.BETTER_AUTH_SECRET ?? 'dev-secret-change-me';
   if (!db) return new Response('DB niet beschikbaar', { status: 500 });
-  const user = await requireUser(ctx.request.clone(), db);
+  const user = await requireUser(ctx.request.clone(), db, secret);
   if (!user) return new Response('Niet ingelogd', { status: 401 });
 
   const { id, status } = await ctx.request.json();
