@@ -1,36 +1,59 @@
-import { existsSync, unlinkSync, writeFileSync } from 'fs';
+import { existsSync, unlinkSync, writeFileSync, cpSync, readdirSync } from 'fs';
 import { join } from 'path';
+import { build } from 'esbuild';
 
-console.log('Postbuild: configuratie opschonen...');
+console.log('Postbuild: bundelen voor Cloudflare Pages...');
 
-// Verwijder wrangler.jsonc die Astro aanmaakt in repo root
+// Verwijder wrangler bestanden die Astro aanmaakt in repo root
 for (const f of ['wrangler.jsonc', 'wrangler.json']) {
   if (existsSync(f)) { unlinkSync(f); console.log(`${f} verwijderd`); }
 }
 
-// Vervang dist/server/wrangler.json met schone versie
-// Cloudflare leest dit bestand om de worker te configureren
-const cleanWrangler = {
-  name: "bjj-dagboek",
-  compatibility_date: "2024-12-01",
-  compatibility_flags: ["nodejs_compat"],
-  main: "entry.mjs",
-  assets: {
-    binding: "STATIC",
-    directory: "../client"
-  },
-  d1_databases: [
-    {
-      binding: "DB",
-      database_name: "bjj-dagboek",
-      database_id: "VERVANG_MET_JOUW_DATABASE_ID"
-    }
-  ]
-};
+// Kopieer static assets van dist/client naar dist root
+const client = './dist/client';
+const dist = './dist';
+if (existsSync(client)) {
+  for (const item of readdirSync(client)) {
+    try { cpSync(join(client, item), join(dist, item), { recursive: true, force: true }); } catch(e) {}
+  }
+  console.log('Static assets gekopieerd naar dist/');
+}
 
-writeFileSync(
-  join('dist', 'server', 'wrangler.json'),
-  JSON.stringify(cleanWrangler, null, 2)
-);
-console.log('dist/server/wrangler.json gepatcht');
+// Bundel de entry + alle chunks naar één _worker.js
+console.log('Worker bundelen...');
+await build({
+  entryPoints: ['./dist/server/entry.mjs'],
+  bundle: true,
+  outfile: './dist/_worker.js',
+  format: 'esm',
+  platform: 'browser',
+  conditions: ['workerd', 'worker', 'browser'],
+  // Markeer node: en cloudflare: imports als external — die zijn beschikbaar in de runtime
+  external: [
+    'node:*',
+    'cloudflare:*',
+    '__STATIC_CONTENT_MANIFEST',
+  ],
+  define: {
+    'process.env.NODE_ENV': '"production"',
+  },
+  minify: false,
+  logLevel: 'warning',
+});
+console.log('_worker.js gebundeld');
+
+// _routes.json
+writeFileSync('./dist/_routes.json', JSON.stringify({
+  version: 1,
+  include: ['/*'],
+  exclude: [
+    '/_astro/*',
+    '/icons/*',
+    '/manifest.json',
+    '/sw.js',
+    '/favicon.ico',
+    '/favicon.svg',
+  ]
+}, null, 2));
+console.log('_routes.json aangemaakt');
 console.log('Postbuild klaar!');
