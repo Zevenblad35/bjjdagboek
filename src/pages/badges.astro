@@ -1,0 +1,106 @@
+---
+import App from '../layouts/App.astro';
+import { createAuth } from '../lib/auth';
+import { getDB, getSecret } from '../lib/runtime';
+import { BADGES, calcEarnedBadges, calcPoints } from '../lib/badges';
+
+const db = getDB();
+const auth = createAuth(db, getSecret());
+const session = await auth.api.getSession({ headers: Astro.request.headers });
+if (!session?.user) return Astro.redirect('/inloggen');
+
+const uid = session.user.id;
+
+// Stats ophalen
+const { results: entries } = await db.prepare(
+  'SELECT type, duration_min FROM entry WHERE user_id = ?'
+).bind(uid).all<{type:string;duration_min:number}>();
+
+const { results: goalsDone } = await db.prepare(
+  "SELECT id FROM goal WHERE user_id = ? AND status = 'klaar'"
+).bind(uid).all();
+
+const profile = await db.prepare(
+  'SELECT belt, stripes FROM profile WHERE user_id = ?'
+).bind(uid).first<{belt:string;stripes:number}>();
+
+const stats = {
+  entries: entries.length,
+  hours: Math.floor(entries.reduce((s, e) => s + (e.duration_min || 0), 0) / 60),
+  seminars: entries.filter(e => e.type === 'seminar').length,
+  competitions: entries.filter(e => e.type === 'competitie').length,
+  goals_done: goalsDone.length,
+  belt: profile?.belt ?? 'white',
+  stripes: profile?.stripes ?? 0,
+};
+
+const earnedIds = calcEarnedBadges(stats);
+const totalPoints = calcPoints(earnedIds);
+const totalBadges = BADGES.length;
+const earnedCount = earnedIds.length;
+
+// Groepeer badges per categorie
+const categories = [
+  { key: 'sessies',  label: 'Sessies' },
+  { key: 'uren',     label: 'Mat uren' },
+  { key: 'type',     label: 'Type sessies' },
+  { key: 'doelen',   label: 'Doelen' },
+  { key: 'belt',     label: 'Belt' },
+  { key: 'strepen',  label: 'Strepen' },
+] as const;
+---
+<App title="Badges" page="voortgang">
+  <div style="padding:20px 20px 0">
+    <div style="font-size:20px;font-weight:700;color:var(--text-hi);margin-bottom:4px">Badges</div>
+    <div style="font-size:13px;color:var(--muted);margin-bottom:20px">Behaal badges door te trainen en je doelen te halen</div>
+
+    <!-- Totaal punten card -->
+    <div style="background:var(--blue);border-radius:16px;padding:18px 20px;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between">
+      <div>
+        <div style="font-size:11px;color:rgba(255,255,255,.6);font-family:'Space Mono',monospace;letter-spacing:.08em;margin-bottom:4px">TOTAAL PUNTEN</div>
+        <div style="font-size:36px;font-weight:700;color:white;line-height:1">{totalPoints}</div>
+        <div style="font-size:12px;color:rgba(255,255,255,.6);margin-top:4px">{earnedCount} van {totalBadges} badges behaald</div>
+      </div>
+      <div style="font-size:48px">🏅</div>
+    </div>
+
+    <!-- Voortgangsbalk -->
+    <div style="margin-bottom:24px">
+      <div style="height:8px;background:var(--raised);border-radius:4px;overflow:hidden">
+        <div style={`height:100%;background:var(--blue);border-radius:4px;width:${Math.round((earnedCount/totalBadges)*100)}%;transition:width .5s`}></div>
+      </div>
+      <div style="font-size:11px;color:var(--muted);margin-top:6px;font-family:'Space Mono',monospace">
+        {Math.round((earnedCount/totalBadges)*100)}% compleet
+      </div>
+    </div>
+
+    <!-- Badges per categorie -->
+    {categories.map(cat => {
+      const catBadges = BADGES.filter(b => b.category === cat.key);
+      return (
+        <div style="margin-bottom:24px">
+          <div class="section-title" style="margin-bottom:12px">{cat.label}</div>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            {catBadges.map(badge => {
+              const earned = earnedIds.includes(badge.id);
+              return (
+                <div style={`background:${earned ? 'var(--surface)' : 'var(--raised)'};border-radius:12px;padding:14px 16px;display:flex;align-items:center;gap:14px;box-shadow:${earned ? 'var(--shadow-sm)' : 'none'};opacity:${earned ? '1' : '0.5'}`}>
+                  <div style={`font-size:28px;width:44px;height:44px;display:flex;align-items:center;justify-content:center;background:${earned ? 'var(--blue-light)' : 'var(--border)'};border-radius:10px;flex-shrink:0`}>
+                    {badge.icon}
+                  </div>
+                  <div style="flex:1;min-width:0">
+                    <div style={`font-size:14px;font-weight:600;color:${earned ? 'var(--text-hi)' : 'var(--text-dim)'};margin-bottom:2px`}>
+                      {badge.title}
+                    </div>
+                    <div style="font-size:12px;color:var(--muted)">{badge.desc}</div>
+                  </div>
+                  {earned && <div style="font-size:18px;flex-shrink:0">✓</div>}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      );
+    })}
+  </div>
+</App>

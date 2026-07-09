@@ -63,7 +63,25 @@ const currentBelt = profile?.belt ?? 'white';
       <button type="submit" class="btn btn-primary">Opslaan</button>
     </form>
 
+    <!-- Wachtwoord wijzigen -->
     <div style="margin-top:24px;padding-top:20px;border-top:1px solid var(--border)">
+      <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:12px">Wachtwoord wijzigen</div>
+      <div id="pw-error" style="display:none;background:var(--red-bg);color:var(--red);border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:10px"></div>
+      <div id="pw-success" style="display:none;background:var(--green-bg);color:var(--green);border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:10px">✓ Wachtwoord gewijzigd</div>
+      <form id="pw-form">
+        <div class="form-group">
+          <label class="form-label">Huidig wachtwoord</label>
+          <input class="form-input" type="password" name="current" required placeholder="••••••••" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Nieuw wachtwoord</label>
+          <input class="form-input" type="password" name="new" required placeholder="Min. 8 tekens" minlength="8" />
+        </div>
+        <button type="submit" class="btn btn-ghost" style="width:100%">Wachtwoord wijzigen</button>
+      </form>
+    </div>
+
+    <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border)">
       <button id="logout-btn" class="btn btn-ghost" style="width:100%">Uitloggen</button>
     </div>
   </div>
@@ -110,4 +128,38 @@ document.getElementById('logout-btn')?.addEventListener('click', async () => {
   await fetch('/api/auth/sign-out', { method: 'POST' });
   window.location.href = '/inloggen';
 });
+
+// Wachtwoord wijzigen
+document.getElementById('pw-form')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const form = e.target as HTMLFormElement;
+  const btn = form.querySelector('button[type="submit"]') as HTMLButtonElement;
+  const errEl = document.getElementById('pw-error')!;
+  const okEl  = document.getElementById('pw-success')!;
+  const data  = new FormData(form);
+
+  btn.textContent = 'Wijzigen…'; btn.disabled = true;
+  errEl.style.display = 'none'; okEl.style.display = 'none';
+
+  const res = await fetch('/api/auth/change-password', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      currentPassword: data.get('current'),
+      newPassword: data.get('new'),
+    }),
+  });
+
+  if (res.ok) {
+    okEl.style.display = 'block';
+    form.reset();
+  } else {
+    const json = await res.json().catch(() => ({}));
+    errEl.textContent = json.message || 'Huidig wachtwoord klopt niet.';
+    errEl.style.display = 'block';
+  }
+  btn.textContent = 'Wachtwoord wijzigen'; btn.disabled = false;
+});
 </script>
+
+<!-- Wachtwoord wijzigen sectie — toegevoegd door update -->

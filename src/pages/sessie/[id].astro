@@ -3,11 +3,8 @@ import App from '../../layouts/App.astro';
 import { createAuth } from '../../lib/auth';
 import { getDB, getSecret } from '../../lib/runtime';
 
-
-  
-  
-
-const db = getDB(); const auth = createAuth(db, getSecret());
+const db = getDB();
+const auth = createAuth(db, getSecret());
 const session = await auth.api.getSession({ headers: Astro.request.headers });
 if (!session?.user) return Astro.redirect('/inloggen');
 
@@ -26,6 +23,8 @@ const tags = tagRows.map(r => r.tag);
 const typeLabel: Record<string,string> = { training:'Training', seminar:'Seminar', competitie:'Competitie' };
 const typeEmoji: Record<string,string> = { training:'🥋', seminar:'📋', competitie:'🏆' };
 
+const editing = Astro.url.searchParams.get('edit') === '1';
+
 function formatDate(d: string) {
   return new Date(d).toLocaleDateString('nl-NL', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
 }
@@ -36,46 +35,183 @@ function formatDate(d: string) {
       ← Terug
     </a>
 
-    <!-- Header -->
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
-      <div class={`entry-dot dot-${entry.type}`} style="width:11px;height:11px;margin-top:0"></div>
-      <div style="font-size:20px;font-weight:700;color:var(--text-hi)">
-        {typeEmoji[entry.type]} {typeLabel[entry.type]}
-      </div>
-    </div>
-    <div style="font-size:13px;color:var(--muted);margin-bottom:4px">{formatDate(entry.date)}</div>
-    <div style="display:flex;gap:12px;font-size:13px;color:var(--text-dim);margin-bottom:20px">
-      {entry.duration_min && <span>⏱ {entry.duration_min} minuten</span>}
-      {entry.location && <span>📍 {entry.location}</span>}
-    </div>
-
-    {tags.length > 0 && (
-      <div style="margin-bottom:20px">
-        <div class="tags">
-          {tags.map(t => <span class="tag tag-blue">{t}</span>)}
+    {!editing ? (
+      <!-- WEERGAVE MODUS -->
+      <div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+          <div style="display:flex;align-items:center;gap:10px">
+            <div class={`entry-dot dot-${entry.type}`} style="width:11px;height:11px;margin-top:0"></div>
+            <div style="font-size:20px;font-weight:700;color:var(--text-hi)">
+              {typeEmoji[entry.type]} {typeLabel[entry.type]}
+            </div>
+          </div>
+          <a href={`/sessie/${entry.id}?edit=1`} style="font-size:13px;color:var(--blue);font-weight:600;text-decoration:none;background:var(--blue-light);padding:7px 14px;border-radius:8px">
+            ✏️ Wijzigen
+          </a>
         </div>
-      </div>
-    )}
 
-    {entry.went_well && (
-      <div class="card" style="margin-bottom:12px;border-left:3px solid var(--green)">
-        <div style="font-size:11px;font-family:'Space Mono',monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--green);margin-bottom:6px">Wat ging goed</div>
-        <div style="font-size:14px;color:var(--text);white-space:pre-wrap">{entry.went_well}</div>
-      </div>
-    )}
+        <div style="font-size:13px;color:var(--muted);margin-bottom:4px">{formatDate(entry.date)}</div>
+        <div style="display:flex;gap:12px;font-size:13px;color:var(--text-dim);margin-bottom:20px">
+          {entry.duration_min && <span>⏱ {entry.duration_min} minuten</span>}
+          {entry.location && <span>📍 {entry.location}</span>}
+        </div>
 
-    {entry.struggled_with && (
-      <div class="card" style="margin-bottom:12px;border-left:3px solid var(--orange)">
-        <div style="font-size:11px;font-family:'Space Mono',monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--orange);margin-bottom:6px">Moeite mee gehad</div>
-        <div style="font-size:14px;color:var(--text);white-space:pre-wrap">{entry.struggled_with}</div>
-      </div>
-    )}
+        {tags.length > 0 && (
+          <div style="margin-bottom:20px">
+            <div class="tags">
+              {tags.map(t => <span class="tag tag-blue">{t}</span>)}
+            </div>
+          </div>
+        )}
 
-    {entry.notes && (
-      <div class="card" style="margin-bottom:12px">
-        <div style="font-size:11px;font-family:'Space Mono',monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:6px">Notities</div>
-        <div style="font-size:14px;color:var(--text);white-space:pre-wrap">{entry.notes}</div>
+        {entry.went_well && (
+          <div class="card" style="margin-bottom:12px;border-left:3px solid var(--green)">
+            <div style="font-size:11px;font-family:'Space Mono',monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--green);margin-bottom:6px">Wat ging goed</div>
+            <div style="font-size:14px;color:var(--text);white-space:pre-wrap">{entry.went_well}</div>
+          </div>
+        )}
+
+        {entry.struggled_with && (
+          <div class="card" style="margin-bottom:12px;border-left:3px solid var(--orange)">
+            <div style="font-size:11px;font-family:'Space Mono',monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--orange);margin-bottom:6px">Moeite mee gehad</div>
+            <div style="font-size:14px;color:var(--text);white-space:pre-wrap">{entry.struggled_with}</div>
+          </div>
+        )}
+
+        {entry.notes && (
+          <div class="card" style="margin-bottom:12px">
+            <div style="font-size:11px;font-family:'Space Mono',monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:6px">Notities</div>
+            <div style="font-size:14px;color:var(--text);white-space:pre-wrap">{entry.notes}</div>
+          </div>
+        )}
+
+        <button id="delete-btn" class="btn btn-danger" style="width:100%;margin-top:8px">🗑 Sessie verwijderen</button>
+      </div>
+    ) : (
+      <!-- EDIT MODUS -->
+      <div>
+        <div style="font-size:20px;font-weight:700;color:var(--text-hi);margin-bottom:16px">Sessie wijzigen</div>
+
+        <div id="edit-error" style="display:none;background:var(--red-bg);color:var(--red);border-radius:10px;padding:12px 14px;font-size:13px;margin-bottom:14px"></div>
+
+        <form id="edit-form">
+          <input type="hidden" name="id" value={entry.id} />
+
+          <div class="form-group">
+            <div class="form-label">Type sessie</div>
+            <div class="type-selector">
+              <button type="button" class={`type-btn ${entry.type === 'training' ? 'active-training' : ''}`} data-type="training">🥋 Training</button>
+              <button type="button" class={`type-btn ${entry.type === 'seminar' ? 'active-seminar' : ''}`} data-type="seminar">📋 Seminar</button>
+              <button type="button" class={`type-btn ${entry.type === 'competitie' ? 'active-comp' : ''}`} data-type="competitie">🏆 Competitie</button>
+            </div>
+            <input type="hidden" name="type" value={entry.type} />
+          </div>
+
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <div class="form-group">
+              <label class="form-label">Datum</label>
+              <input class="form-input" type="date" name="date" value={entry.date} required />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Duur (min)</label>
+              <input class="form-input" type="number" name="duration_min" value={entry.duration_min || ''} placeholder="90" min="1" />
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Locatie</label>
+            <input class="form-input" type="text" name="location" value={entry.location || ''} placeholder="Bijv. JJ Nijverdal" />
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Wat ging goed?</label>
+            <textarea class="form-textarea" name="went_well">{entry.went_well || ''}</textarea>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Waar had je moeite mee?</label>
+            <textarea class="form-textarea" name="struggled_with">{entry.struggled_with || ''}</textarea>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Technieken</label>
+            <input class="form-input" type="text" name="tags" value={tags.join(', ')} placeholder="half guard, arm bar" />
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Notities</label>
+            <textarea class="form-textarea" name="notes">{entry.notes || ''}</textarea>
+          </div>
+
+          <div style="display:flex;gap:8px">
+            <a href={`/sessie/${entry.id}`} class="btn btn-ghost" style="flex:1;text-align:center">Annuleren</a>
+            <button type="submit" class="btn btn-primary" style="flex:2">Opslaan</button>
+          </div>
+        </form>
       </div>
     )}
   </div>
 </App>
+
+<script>
+// Type selector
+document.querySelectorAll('.type-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const type = btn.getAttribute('data-type')!;
+    document.querySelectorAll('.type-btn').forEach(b => b.className = 'type-btn');
+    btn.className = `type-btn active-${type === 'competitie' ? 'comp' : type}`;
+    (document.querySelector('input[name="type"]') as HTMLInputElement).value = type;
+  });
+});
+
+// Edit formulier opslaan
+document.getElementById('edit-form')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const form = e.target as HTMLFormElement;
+  const btn = form.querySelector('button[type="submit"]') as HTMLButtonElement;
+  const errEl = document.getElementById('edit-error')!;
+  const data = new FormData(form);
+
+  btn.textContent = 'Opslaan…'; btn.disabled = true;
+  errEl.style.display = 'none';
+
+  const tags = (data.get('tags') as string || '').split(',').map(t => t.trim()).filter(Boolean);
+
+  const res = await fetch('/api/entries', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      id: data.get('id'),
+      type: data.get('type'),
+      date: data.get('date'),
+      duration_min: data.get('duration_min') ? Number(data.get('duration_min')) : null,
+      location: data.get('location') || null,
+      went_well: data.get('went_well') || null,
+      struggled_with: data.get('struggled_with') || null,
+      notes: data.get('notes') || null,
+      tags,
+    }),
+  });
+
+  if (res.ok) {
+    window.location.href = `/sessie/${data.get('id')}`;
+  } else {
+    const json = await res.json().catch(() => ({}));
+    errEl.textContent = json.error || 'Opslaan mislukt.';
+    errEl.style.display = 'block';
+    btn.textContent = 'Opslaan'; btn.disabled = false;
+  }
+});
+
+// Verwijderen
+document.getElementById('delete-btn')?.addEventListener('click', async () => {
+  if (!confirm('Weet je zeker dat je deze sessie wilt verwijderen?')) return;
+  const id = window.location.pathname.split('/').pop();
+  const res = await fetch('/api/entries', {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id }),
+  });
+  if (res.ok) window.location.href = '/logboek';
+});
+</script>

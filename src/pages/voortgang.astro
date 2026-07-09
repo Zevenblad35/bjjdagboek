@@ -125,5 +125,17 @@ const totalHours = Math.round(allEntries.reduce((s,e) => s + (e.duration_min||0)
         ))}
       </div>
     </div>
+
+    <!-- Badges knop -->
+    <a href="/badges" style="display:flex;align-items:center;justify-content:space-between;background:var(--surface);border-radius:14px;padding:16px 18px;box-shadow:var(--shadow-sm);text-decoration:none;margin-bottom:20px">
+      <div style="display:flex;align-items:center;gap:12px">
+        <div style="font-size:28px">🏅</div>
+        <div>
+          <div style="font-size:14px;font-weight:600;color:var(--text-hi)">Badges & Punten</div>
+          <div style="font-size:12px;color:var(--muted)">Bekijk je behaalde achievements</div>
+        </div>
+      </div>
+      <div style="color:var(--muted);font-size:18px">›</div>
+    </a>
   </div>
 </App>

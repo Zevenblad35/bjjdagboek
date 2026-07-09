@@ -88,3 +88,14 @@ CREATE TABLE IF NOT EXISTS goal (
 
 CREATE INDEX IF NOT EXISTS idx_entry_user ON entry(user_id, date DESC);
 CREATE INDEX IF NOT EXISTS idx_goal_user  ON goal(user_id, status);
+
+-- Behaalde badges / achievements
+CREATE TABLE IF NOT EXISTS achievement (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
+  badge_id TEXT NOT NULL,
+  earned_at INTEGER NOT NULL DEFAULT (unixepoch()),
+  UNIQUE(user_id, badge_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_achievement_user ON achievement(user_id);
