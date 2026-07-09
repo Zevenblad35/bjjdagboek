@@ -108,7 +108,7 @@ html, body {
   background: var(--surface);
   border-top: 1px solid var(--border);
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(6, 1fr);
   padding: 10px 0 max(20px, env(safe-area-inset-bottom));
   z-index: 100;
 }

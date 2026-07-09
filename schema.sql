@@ -99,3 +99,38 @@ CREATE TABLE IF NOT EXISTS achievement (
 );
 
 CREATE INDEX IF NOT EXISTS idx_achievement_user ON achievement(user_id);
+
+-- Technieken database (gedeeld)
+CREATE TABLE IF NOT EXISTS technique (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  description TEXT,
+  category TEXT,
+  youtube_url TEXT,
+  added_by TEXT NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
+  merged_into TEXT REFERENCES technique(id) ON DELETE SET NULL,
+  created_at INTEGER NOT NULL DEFAULT (unixepoch())
+);
+
+CREATE TABLE IF NOT EXISTS technique_favorite (
+  user_id TEXT NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
+  technique_id TEXT NOT NULL REFERENCES technique(id) ON DELETE CASCADE,
+  notes TEXT,
+  created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+  PRIMARY KEY (user_id, technique_id)
+);
+
+-- Wachtwoord reset verzoeken (geen email — admin handelt af)
+CREATE TABLE IF NOT EXISTS password_reset_request (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
+  email TEXT NOT NULL,
+  requested_at INTEGER NOT NULL DEFAULT (unixepoch()),
+  handled INTEGER NOT NULL DEFAULT 0,
+  handled_at INTEGER
+);
+
+CREATE INDEX IF NOT EXISTS idx_technique_name     ON technique(name);
+CREATE INDEX IF NOT EXISTS idx_technique_category ON technique(category);
+CREATE INDEX IF NOT EXISTS idx_fav_user           ON technique_favorite(user_id);
+CREATE INDEX IF NOT EXISTS idx_reset_handled      ON password_reset_request(handled, requested_at DESC);

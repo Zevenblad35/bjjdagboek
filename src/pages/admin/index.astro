@@ -1,0 +1,241 @@
+---
+import App from '../../layouts/App.astro';
+import { createAuth } from '../../lib/auth';
+import { getDB, getSecret } from '../../lib/runtime';
+import { isAdmin } from '../../lib/admin';
+
+const db = getDB();
+const auth = createAuth(db, getSecret());
+const session = await auth.api.getSession({ headers: Astro.request.headers });
+if (!session?.user || !isAdmin(session.user.email)) {
+  return Astro.redirect('/dashboard');
+}
+
+// Gebruikers ophalen
+const { results: users } = await db.prepare(
+  `SELECT u.id, u.name, u.email, u.createdAt,
+          p.belt, p.stripes, p.gym,
+          COUNT(DISTINCT e.id) as sessions,
+          ROUND(SUM(e.duration_min) / 60.0, 1) as hours
+   FROM "user" u
+   LEFT JOIN profile p ON p.user_id = u.id
+   LEFT JOIN entry e ON e.user_id = u.id
+   GROUP BY u.id
+   ORDER BY u.createdAt DESC`
+).all<{id:string;name:string;email:string;createdAt:number;belt:string;stripes:number;gym:string;sessions:number;hours:number}>();
+
+// Openstaande wachtwoord reset verzoeken
+const { results: resets } = await db.prepare(
+  `SELECT r.*, u.name as user_name FROM password_reset_request r
+   JOIN "user" u ON u.id = r.user_id
+   WHERE r.handled = 0
+   ORDER BY r.requested_at DESC`
+).all<{id:string;user_id:string;email:string;user_name:string;requested_at:number}>();
+
+// Techniek duplicaten (zelfde naam, meerdere records)
+const { results: technieken } = await db.prepare(
+  `SELECT t.*, u.name as added_by_name FROM technique t
+   JOIN "user" u ON u.id = t.added_by
+   WHERE t.merged_into IS NULL
+   ORDER BY t.name ASC LIMIT 100`
+).all<{id:string;name:string;category:string;added_by_name:string}>();
+
+const beltNL: Record<string,string> = { white:'Wit', blue:'Blauw', purple:'Paars', brown:'Bruin', black:'Zwart' };
+
+function formatDate(ts: number) {
+  return new Date(ts).toLocaleDateString('nl-NL', { day:'numeric', month:'short', year:'numeric' });
+}
+---
+<App title="Admin" page="">
+  <div style="padding:20px 20px 0">
+    <div style="font-size:20px;font-weight:700;color:var(--text-hi);margin-bottom:4px">Admin</div>
+    <div style="font-size:13px;color:var(--muted);margin-bottom:20px">{users.length} gebruikers geregistreerd</div>
+
+    <!-- Wachtwoord reset verzoeken -->
+    {resets.length > 0 && (
+      <div style="background:var(--orange-bg);border-radius:14px;padding:16px;margin-bottom:20px;border:1px solid var(--orange)">
+        <div style="font-size:13px;font-weight:700;color:var(--orange);margin-bottom:12px">
+          🔑 {resets.length} wachtwoord reset {resets.length === 1 ? 'verzoek' : 'verzoeken'}
+        </div>
+        {resets.map(r => (
+          <div style="background:var(--surface);border-radius:10px;padding:12px 14px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;gap:10px">
+            <div>
+              <div style="font-size:13px;font-weight:600;color:var(--text-hi)">{r.user_name}</div>
+              <div style="font-size:12px;color:var(--muted)">{r.email}</div>
+              <div style="font-size:11px;color:var(--muted);font-family:'Space Mono',monospace;margin-top:2px">
+                {formatDate(r.requested_at * 1000)}
+              </div>
+            </div>
+            <button
+              class="reset-pw-btn"
+              data-user-id={r.user_id}
+              data-request-id={r.id}
+              style="background:var(--blue);color:white;border:none;padding:8px 14px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;font-family:'Space Grotesk',sans-serif"
+            >
+              Nieuw wachtwoord
+            </button>
+          </div>
+        ))}
+      </div>
+    )}
+
+    <!-- Gebruikers lijst -->
+    <div class="section-title" style="margin-bottom:12px">Gebruikers</div>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:24px">
+      {users.map(u => (
+        <div style="background:var(--surface);border-radius:12px;padding:14px 16px;box-shadow:var(--shadow-sm)">
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px">
+            <div style="flex:1;min-width:0">
+              <div style="font-size:14px;font-weight:600;color:var(--text-hi);margin-bottom:2px">{u.name}</div>
+              <div style="font-size:12px;color:var(--muted);margin-bottom:4px">{u.email}</div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap;font-size:11px;font-family:'Space Mono',monospace;color:var(--text-dim)">
+                {u.belt && <span style="background:var(--raised);padding:2px 7px;border-radius:4px">{beltNL[u.belt] ?? u.belt}</span>}
+                {u.gym && <span style="background:var(--raised);padding:2px 7px;border-radius:4px">📍 {u.gym}</span>}
+                <span>{u.sessions ?? 0} sessies</span>
+                <span>{u.hours ?? 0}u mat</span>
+              </div>
+              <div style="font-size:11px;color:var(--muted);margin-top:4px">Lid sinds {formatDate(u.createdAt)}</div>
+            </div>
+            <button
+              class="reset-pw-btn"
+              data-user-id={u.id}
+              style="background:var(--raised);color:var(--text-dim);border:none;padding:7px 12px;border-radius:8px;font-size:11px;cursor:pointer;white-space:nowrap;font-family:'Space Grotesk',sans-serif;flex-shrink:0"
+            >
+              🔑 Reset pw
+            </button>
+          </div>
+        </div>
+      ))}
+    </div>
+
+    <!-- Technieken beheer -->
+    <div class="section-title" style="margin-bottom:12px">Technieken beheer ({technieken.length})</div>
+    <div style="background:var(--surface);border-radius:14px;padding:16px;margin-bottom:24px;box-shadow:var(--shadow-sm)">
+      <div style="font-size:13px;color:var(--muted);margin-bottom:12px">
+        Selecteer twee technieken om samen te voegen. De eerste blijft bestaan, de tweede wordt verwijderd.
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px;max-height:300px;overflow-y:auto;margin-bottom:12px">
+        {technieken.map(t => (
+          <label style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;cursor:pointer;background:var(--raised)">
+            <input type="checkbox" class="tech-check" value={t.id} data-name={t.name} style="width:16px;height:16px;accent-color:var(--blue)" />
+            <div style="flex:1;min-width:0">
+              <div style="font-size:13px;font-weight:500;color:var(--text-hi)">{t.name}</div>
+              {t.category && <div style="font-size:11px;color:var(--muted)">{t.category}</div>}
+            </div>
+          </label>
+        ))}
+      </div>
+      <div id="merge-panel" style="display:none">
+        <div style="font-size:12px;color:var(--muted);margin-bottom:8px">Nieuwe naam (optioneel):</div>
+        <input id="merge-name" class="form-input" type="text" placeholder="Naam van de samengevoegde techniek" style="margin-bottom:8px" />
+        <button id="merge-btn" class="btn btn-primary">Samenvoegen</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Wachtwoord modal -->
+  <div id="pw-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:200;align-items:center;justify-content:center;padding:20px">
+    <div style="background:var(--surface);border-radius:16px;padding:24px;width:100%;max-width:360px">
+      <div style="font-size:16px;font-weight:700;color:var(--text-hi);margin-bottom:16px">Nieuw wachtwoord instellen</div>
+      <div id="pw-result" style="display:none;background:var(--green-bg);border-radius:10px;padding:12px 14px;margin-bottom:12px">
+        <div style="font-size:12px;color:var(--muted);margin-bottom:4px">Nieuw wachtwoord:</div>
+        <div id="pw-value" style="font-size:18px;font-weight:700;font-family:'Space Mono',monospace;color:var(--green);letter-spacing:.05em"></div>
+        <div style="font-size:11px;color:var(--muted);margin-top:6px">Kopieer dit en stuur het naar de gebruiker.</div>
+      </div>
+      <div id="pw-form-area">
+        <div style="font-size:13px;color:var(--muted);margin-bottom:12px">Laat leeg voor een automatisch gegenereerd wachtwoord.</div>
+        <input id="custom-pw" class="form-input" type="text" placeholder="Eigen wachtwoord (optioneel)" style="margin-bottom:12px" />
+        <div style="display:flex;gap:8px">
+          <button id="pw-cancel" class="btn btn-ghost" style="flex:1">Annuleren</button>
+          <button id="pw-confirm" class="btn btn-primary" style="flex:2">Instellen</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</App>
+
+<script>
+let currentUserId = '';
+let currentRequestId = '';
+
+// Reset wachtwoord knoppen
+document.querySelectorAll('.reset-pw-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    currentUserId = (btn as HTMLElement).dataset.userId!;
+    currentRequestId = (btn as HTMLElement).dataset.requestId || '';
+    document.getElementById('pw-result')!.style.display = 'none';
+    document.getElementById('pw-form-area')!.style.display = 'block';
+    (document.getElementById('custom-pw') as HTMLInputElement).value = '';
+    document.getElementById('pw-modal')!.style.display = 'flex';
+  });
+});
+
+document.getElementById('pw-cancel')?.addEventListener('click', () => {
+  document.getElementById('pw-modal')!.style.display = 'none';
+});
+
+document.getElementById('pw-confirm')?.addEventListener('click', async () => {
+  const customPw = (document.getElementById('custom-pw') as HTMLInputElement).value.trim();
+  const btn = document.getElementById('pw-confirm') as HTMLButtonElement;
+  btn.textContent = 'Instellen…'; btn.disabled = true;
+
+  const res = await fetch('/api/admin/set-password', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      userId: currentUserId,
+      requestId: currentRequestId || undefined,
+      customPassword: customPw || undefined,
+    }),
+  });
+
+  const data = await res.json();
+
+  if (res.ok) {
+    document.getElementById('pw-form-area')!.style.display = 'none';
+    document.getElementById('pw-value')!.textContent = data.newPassword;
+    document.getElementById('pw-result')!.style.display = 'block';
+  }
+
+  btn.textContent = 'Instellen'; btn.disabled = false;
+});
+
+// Technieken samenvoegen
+const checked: Map<string, string> = new Map(); // id -> name
+
+document.querySelectorAll('.tech-check').forEach(cb => {
+  cb.addEventListener('change', () => {
+    const el = cb as HTMLInputElement;
+    if (el.checked) {
+      if (checked.size >= 2) { el.checked = false; return; }
+      checked.set(el.value, el.dataset.name!);
+    } else {
+      checked.delete(el.value);
+    }
+    const panel = document.getElementById('merge-panel')!;
+    if (checked.size === 2) {
+      panel.style.display = 'block';
+      const names = [...checked.values()];
+      (document.getElementById('merge-name') as HTMLInputElement).placeholder = names[0];
+    } else {
+      panel.style.display = 'none';
+    }
+  });
+});
+
+document.getElementById('merge-btn')?.addEventListener('click', async () => {
+  const ids = [...checked.keys()];
+  const newName = (document.getElementById('merge-name') as HTMLInputElement).value.trim();
+  const btn = document.getElementById('merge-btn') as HTMLButtonElement;
+  btn.textContent = 'Samenvoegen…'; btn.disabled = true;
+
+  const res = await fetch('/api/admin/merge-technique', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ keepId: ids[0], mergeId: ids[1], newName: newName || undefined }),
+  });
+
+  if (res.ok) window.location.reload();
+  else { btn.textContent = 'Samenvoegen'; btn.disabled = false; }
+});
+</script>

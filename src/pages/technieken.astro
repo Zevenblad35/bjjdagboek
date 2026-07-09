@@ -1,0 +1,284 @@
+---
+import App from '../layouts/App.astro';
+import { createAuth } from '../lib/auth';
+import { getDB, getSecret } from '../lib/runtime';
+
+const db = getDB();
+const auth = createAuth(db, getSecret());
+const session = await auth.api.getSession({ headers: Astro.request.headers });
+if (!session?.user) return Astro.redirect('/inloggen');
+
+// Haal favorieten op voor tonen op deze pagina
+const { results: favorieten } = await db.prepare(
+  `SELECT t.*, u.name as added_by_name, 1 as is_favorite
+   FROM technique_favorite f
+   JOIN technique t ON t.id = f.technique_id
+   JOIN "user" u ON u.id = t.added_by
+   WHERE f.user_id = ? AND t.merged_into IS NULL
+   ORDER BY t.name ASC`
+).bind(session.user.id).all<{id:string;name:string;description:string;category:string;youtube_url:string;added_by_name:string;is_favorite:number}>();
+
+// Alle categorieën voor filter
+const { results: cats } = await db.prepare(
+  `SELECT DISTINCT category FROM technique WHERE merged_into IS NULL AND category IS NOT NULL ORDER BY category ASC`
+).all<{category:string}>();
+---
+<App title="Technieken" page="technieken">
+  <div style="padding:20px 20px 0">
+    <div style="font-size:20px;font-weight:700;color:var(--text-hi);margin-bottom:4px">Technieken</div>
+    <div style="font-size:13px;color:var(--muted);margin-bottom:16px">Gedeelde techniekendatabase</div>
+
+    <!-- Zoekbalk + toevoegen -->
+    <div style="display:flex;gap:8px;margin-bottom:16px">
+      <input id="zoek-input" class="form-input" type="search" placeholder="Zoek techniek…" style="flex:1" />
+      <button id="toevoegen-btn" class="btn btn-primary" style="width:auto;padding:11px 16px;flex-shrink:0;white-space:nowrap">＋ Nieuw</button>
+    </div>
+
+    <!-- Tabs: Zoekresultaten / Mijn favorieten -->
+    <div style="display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:16px">
+      <button id="tab-zoek" class="tab-btn active" style="padding:9px 16px;font-size:13px;font-weight:600;color:var(--blue);border:none;border-bottom:2px solid var(--blue);background:none;cursor:pointer;margin-bottom:-1px">Zoeken</button>
+      <button id="tab-favs" class="tab-btn" style="padding:9px 16px;font-size:13px;font-weight:500;color:var(--muted);border:none;border-bottom:2px solid transparent;background:none;cursor:pointer;margin-bottom:-1px">
+        Mijn favorieten ({favorieten.length})
+      </button>
+    </div>
+
+    <!-- Zoekresultaten -->
+    <div id="panel-zoek">
+      <div id="zoek-results" style="display:flex;flex-direction:column;gap:8px">
+        <div style="text-align:center;padding:32px 0;color:var(--muted);font-size:13px">
+          Typ een naam om te zoeken…
+        </div>
+      </div>
+    </div>
+
+    <!-- Favorieten -->
+    <div id="panel-favs" style="display:none;flex-direction:column;gap:8px">
+      {favorieten.length === 0 ? (
+        <div class="empty" style="padding-top:32px">
+          <div class="empty-icon">⭐</div>
+          <div class="empty-title">Nog geen favorieten</div>
+          <div class="empty-sub">Zoek een techniek en markeer hem als favoriet.</div>
+        </div>
+      ) : favorieten.map(t => (
+        <div class="techniek-card" data-id={t.id} data-fav="1">
+          <div style="display:flex;align-items:flex-start;gap:12px">
+            <div style="flex:1;min-width:0">
+              <div style="font-size:14px;font-weight:600;color:var(--text-hi);margin-bottom:2px">{t.name}</div>
+              {t.category && <span class="tag tag-blue" style="font-size:11px">{t.category}</span>}
+              {t.description && <div style="font-size:12px;color:var(--muted);margin-top:6px;line-height:1.5">{t.description}</div>}
+              {t.youtube_url && (
+                <a href={t.youtube_url} target="_blank" rel="noopener" style="font-size:12px;color:var(--blue);display:inline-flex;align-items:center;gap:4px;margin-top:6px;text-decoration:none">
+                  ▶ Video bekijken
+                </a>
+              )}
+            </div>
+            <button class="fav-btn" data-id={t.id} style="background:var(--blue-light);border:none;border-radius:8px;padding:7px 10px;cursor:pointer;font-size:16px;flex-shrink:0" title="Favoriet verwijderen">⭐</button>
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+
+  <!-- Toevoegen modal -->
+  <div id="modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:200;align-items:flex-end;justify-content:center">
+    <div style="background:var(--surface);border-radius:20px 20px 0 0;padding:24px 20px;width:100%;max-width:600px;max-height:90vh;overflow-y:auto">
+      <div style="font-size:17px;font-weight:700;color:var(--text-hi);margin-bottom:16px">Techniek toevoegen</div>
+      <div id="modal-error" style="display:none;background:var(--red-bg);color:var(--red);border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:12px"></div>
+      <div id="modal-exists" style="display:none;background:var(--orange-bg);color:var(--orange);border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:12px">
+        Deze techniek bestaat al. Hij is toegevoegd aan je favorieten.
+      </div>
+      <form id="toevoegen-form">
+        <div class="form-group">
+          <label class="form-label">Naam *</label>
+          <input class="form-input" type="text" name="name" required placeholder="Bijv. Butterfly guard sweep" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Categorie</label>
+          <input class="form-input" type="text" name="category" placeholder="Bijv. Sweeps, Guard passing…" list="cats-list" />
+          <datalist id="cats-list">
+            {cats.map(c => <option value={c.category} />)}
+          </datalist>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Beschrijving</label>
+          <textarea class="form-textarea" name="description" placeholder="Korte uitleg of aandachtspunten…" style="min-height:80px"></textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-label">YouTube URL</label>
+          <input class="form-input" type="url" name="youtube_url" placeholder="https://youtube.com/watch?v=…" />
+        </div>
+        <div style="display:flex;gap:8px">
+          <button type="button" id="modal-annuleer" class="btn btn-ghost" style="flex:1">Annuleren</button>
+          <button type="submit" class="btn btn-primary" style="flex:2">Toevoegen</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</App>
+
+<style>
+  .techniek-card {
+    background: var(--surface);
+    border-radius: 12px;
+    padding: 14px 16px;
+    box-shadow: var(--shadow-sm);
+  }
+  .tab-btn { transition: color .15s, border-color .15s; }
+</style>
+
+<script>
+// Tab switching
+document.getElementById('tab-zoek')?.addEventListener('click', () => {
+  document.getElementById('panel-zoek')!.style.display = 'block';
+  document.getElementById('panel-favs')!.style.display = 'none';
+  (document.getElementById('tab-zoek') as HTMLElement).style.cssText += ';color:var(--blue);border-bottom:2px solid var(--blue)';
+  (document.getElementById('tab-favs') as HTMLElement).style.cssText += ';color:var(--muted);border-bottom:2px solid transparent';
+});
+document.getElementById('tab-favs')?.addEventListener('click', () => {
+  document.getElementById('panel-zoek')!.style.display = 'none';
+  document.getElementById('panel-favs')!.style.display = 'flex';
+  (document.getElementById('tab-favs') as HTMLElement).style.cssText += ';color:var(--blue);border-bottom:2px solid var(--blue)';
+  (document.getElementById('tab-zoek') as HTMLElement).style.cssText += ';color:var(--muted);border-bottom:2px solid transparent';
+});
+
+// Zoeken
+let zoekTimer: any;
+document.getElementById('zoek-input')?.addEventListener('input', (e) => {
+  clearTimeout(zoekTimer);
+  const q = (e.target as HTMLInputElement).value.trim();
+  if (!q) {
+    document.getElementById('zoek-results')!.innerHTML =
+      '<div style="text-align:center;padding:32px 0;color:var(--muted);font-size:13px">Typ een naam om te zoeken…</div>';
+    return;
+  }
+  zoekTimer = setTimeout(() => zoek(q), 300);
+});
+
+async function zoek(q: string) {
+  const res = await fetch(`/api/technieken?q=${encodeURIComponent(q)}`);
+  const items = await res.json();
+  const container = document.getElementById('zoek-results')!;
+
+  if (!items.length) {
+    container.innerHTML = `
+      <div style="text-align:center;padding:24px 0;color:var(--muted);font-size:13px">
+        Geen techniek gevonden voor "<strong>${q}</strong>"<br/>
+        <button onclick="document.getElementById('toevoegen-btn')?.click()" style="margin-top:10px;background:var(--blue);color:white;border:none;padding:8px 16px;border-radius:8px;font-size:13px;cursor:pointer">+ Voeg toe</button>
+      </div>`;
+    return;
+  }
+
+  container.innerHTML = items.map((t: any) => `
+    <div class="techniek-card">
+      <div style="display:flex;align-items:flex-start;gap:12px">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:14px;font-weight:600;color:var(--text-hi);margin-bottom:2px">${t.name}</div>
+          ${t.category ? `<span class="tag tag-blue" style="font-size:11px">${t.category}</span>` : ''}
+          ${t.description ? `<div style="font-size:12px;color:var(--muted);margin-top:6px;line-height:1.5">${t.description}</div>` : ''}
+          ${t.youtube_url ? `<a href="${t.youtube_url}" target="_blank" rel="noopener" style="font-size:12px;color:var(--blue);display:inline-flex;align-items:center;gap:4px;margin-top:6px;text-decoration:none">▶ Video bekijken</a>` : ''}
+          <div style="font-size:11px;color:var(--muted);margin-top:4px;font-family:'Space Mono',monospace">Toegevoegd door ${t.added_by_name}</div>
+        </div>
+        <button class="fav-btn" data-id="${t.id}" style="background:${t.is_favorite ? 'var(--blue-light)' : 'var(--raised)'};border:none;border-radius:8px;padding:7px 10px;cursor:pointer;font-size:16px;flex-shrink:0" title="${t.is_favorite ? 'Verwijder uit favorieten' : 'Voeg toe aan favorieten'}">
+          ${t.is_favorite ? '⭐' : '☆'}
+        </button>
+      </div>
+    </div>
+  `).join('');
+
+  // Fav buttons
+  container.querySelectorAll('.fav-btn').forEach(btn => {
+    btn.addEventListener('click', () => toggleFav(btn as HTMLElement));
+  });
+}
+
+async function toggleFav(btn: HTMLElement) {
+  const id = btn.dataset.id!;
+  const res = await fetch('/api/technieken/favoriet', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ technique_id: id }),
+  });
+  const data = await res.json();
+  btn.textContent = data.favorited ? '⭐' : '☆';
+  btn.style.background = data.favorited ? 'var(--blue-light)' : 'var(--raised)';
+}
+
+// Favoriet verwijderen vanuit favorietenlijst
+document.querySelectorAll('#panel-favs .fav-btn').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    const id = (btn as HTMLElement).dataset.id!;
+    await fetch('/api/technieken/favoriet', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ technique_id: id }),
+    });
+    // Verwijder de card uit de UI
+    (btn.closest('.techniek-card') as HTMLElement)?.remove();
+  });
+});
+
+// Modal
+document.getElementById('toevoegen-btn')?.addEventListener('click', () => {
+  document.getElementById('modal')!.style.display = 'flex';
+  // Vul naam in als er al gezocht is
+  const q = (document.getElementById('zoek-input') as HTMLInputElement).value;
+  if (q) (document.querySelector('#toevoegen-form [name="name"]') as HTMLInputElement).value = q;
+});
+document.getElementById('modal-annuleer')?.addEventListener('click', () => {
+  document.getElementById('modal')!.style.display = 'none';
+});
+document.getElementById('modal')?.addEventListener('click', (e) => {
+  if (e.target === document.getElementById('modal')) {
+    document.getElementById('modal')!.style.display = 'none';
+  }
+});
+
+// Techniek toevoegen
+document.getElementById('toevoegen-form')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const form = e.target as HTMLFormElement;
+  const btn = form.querySelector('button[type="submit"]') as HTMLButtonElement;
+  const data = new FormData(form);
+
+  btn.textContent = 'Toevoegen…'; btn.disabled = true;
+  document.getElementById('modal-error')!.style.display = 'none';
+  document.getElementById('modal-exists')!.style.display = 'none';
+
+  const res = await fetch('/api/technieken', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      name: data.get('name'),
+      description: data.get('description') || null,
+      category: data.get('category') || null,
+      youtube_url: data.get('youtube_url') || null,
+    }),
+  });
+
+  const json = await res.json();
+
+  if (res.ok || res.status === 200) {
+    // Voeg direct toe als favoriet
+    await fetch('/api/technieken/favoriet', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ technique_id: json.id }),
+    });
+
+    if (json.existing) {
+      document.getElementById('modal-exists')!.style.display = 'block';
+    } else {
+      setTimeout(() => {
+        document.getElementById('modal')!.style.display = 'none';
+        form.reset();
+        window.location.reload();
+      }, 1200);
+    }
+  } else {
+    document.getElementById('modal-error')!.textContent = json.error || 'Toevoegen mislukt.';
+    document.getElementById('modal-error')!.style.display = 'block';
+  }
+
+  btn.textContent = 'Toevoegen'; btn.disabled = false;
+});
+</script>

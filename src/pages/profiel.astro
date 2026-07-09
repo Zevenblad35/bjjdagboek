@@ -84,10 +84,23 @@ const currentBelt = profile?.belt ?? 'white';
     <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border)">
       <button id="logout-btn" class="btn btn-ghost" style="width:100%">Uitloggen</button>
     </div>
+
+    <!-- Admin link (alleen zichtbaar voor admin) -->
+    <div id="admin-link" style="display:none;margin-top:8px">
+      <a href="/admin" style="display:flex;align-items:center;justify-content:center;gap:6px;color:var(--muted);font-size:12px;text-decoration:none;padding:8px">
+        ⚙️ Admin dashboard
+      </a>
+    </div>
   </div>
 </App>
 
 <script>
+// Toon admin link als de gebruiker admin is
+fetch('/api/auth/get-session').then(r => r.json()).then(data => {
+  if (data?.user?.email === 'peter@peterrutgersmedia.nl') {
+    document.getElementById('admin-link')!.style.display = 'block';
+  }
+}).catch(() => {});
 document.getElementById('profile-form')?.addEventListener('submit', async (e) => {
   e.preventDefault();
   const form = e.target as HTMLFormElement;

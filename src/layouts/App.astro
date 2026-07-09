@@ -66,6 +66,11 @@ const initials = user?.name
         <div class={`nav-label ${page === 'doelen' ? 'active' : ''}`}>Doelen</div>
         {page === 'doelen' && <div class="nav-dot"></div>}
       </a>
+      <a href="/technieken" class="nav-btn">
+        <div class={`nav-icon ${page === 'technieken' ? 'active' : ''}`}>◈</div>
+        <div class={`nav-label ${page === 'technieken' ? 'active' : ''}`}>Techniek</div>
+        {page === 'technieken' && <div class="nav-dot"></div>}
+      </a>
       <a href="/voortgang" class="nav-btn">
         <div class={`nav-icon ${page === 'voortgang' ? 'active' : ''}`}>◎</div>
         <div class={`nav-label ${page === 'voortgang' ? 'active' : ''}`}>Groei</div>

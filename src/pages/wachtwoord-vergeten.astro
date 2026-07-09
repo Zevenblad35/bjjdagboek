@@ -1,0 +1,58 @@
+---
+import Auth from '../layouts/Auth.astro';
+---
+<Auth title="Wachtwoord vergeten">
+<div class="auth-page">
+  <div class="auth-card">
+    <div class="auth-logo">
+      <div style="width:48px;height:48px;background:var(--blue);border-radius:14px;display:grid;place-items:center;color:white;font-size:24px;margin:0 auto 12px">⬡</div>
+      <div style="font-family:'Space Mono',monospace;font-size:12px;color:var(--muted);letter-spacing:.06em">BJJ DAGBOEK</div>
+    </div>
+    <div class="auth-title">Wachtwoord vergeten</div>
+    <div class="auth-sub">Vul je e-mailadres in. De beheerder stuurt je een nieuw wachtwoord.</div>
+
+    <div id="success-msg" style="display:none;background:var(--green-bg);color:var(--green);border-radius:10px;padding:12px 14px;font-size:13px;margin-bottom:14px">
+      ✓ Verzoek ingediend. De beheerder neemt contact op met een nieuw wachtwoord.
+    </div>
+    <div id="error-msg" style="display:none;background:var(--red-bg);color:var(--red);border-radius:10px;padding:12px 14px;font-size:13px;margin-bottom:14px"></div>
+
+    <form id="reset-form">
+      <div class="form-group">
+        <label class="form-label">E-mailadres</label>
+        <input class="form-input" type="email" name="email" required autocomplete="email" placeholder="jij@example.com" />
+      </div>
+      <button type="submit" class="btn btn-primary">Verzoek indienen</button>
+    </form>
+
+    <div class="auth-link">
+      <a href="/inloggen">← Terug naar inloggen</a>
+    </div>
+  </div>
+</div>
+
+<script>
+document.getElementById('reset-form')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const form = e.target as HTMLFormElement;
+  const btn = form.querySelector('button') as HTMLButtonElement;
+  const data = new FormData(form);
+
+  btn.textContent = 'Indienen…'; btn.disabled = true;
+
+  const res = await fetch('/api/reset-request', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: data.get('email') }),
+  });
+
+  if (res.ok) {
+    document.getElementById('success-msg')!.style.display = 'block';
+    form.style.display = 'none';
+  } else {
+    document.getElementById('error-msg')!.textContent = 'Er ging iets mis, probeer opnieuw.';
+    document.getElementById('error-msg')!.style.display = 'block';
+    btn.textContent = 'Verzoek indienen'; btn.disabled = false;
+  }
+});
+</script>
+</Auth>
