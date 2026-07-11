@@ -134,3 +134,32 @@ CREATE INDEX IF NOT EXISTS idx_technique_name     ON technique(name);
 CREATE INDEX IF NOT EXISTS idx_technique_category ON technique(category);
 CREATE INDEX IF NOT EXISTS idx_fav_user           ON technique_favorite(user_id);
 CREATE INDEX IF NOT EXISTS idx_reset_handled      ON password_reset_request(handled, requested_at DESC);
+
+-- Push notificatie subscriptions
+CREATE TABLE IF NOT EXISTS push_subscription (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
+  endpoint TEXT NOT NULL UNIQUE,
+  p256dh TEXT NOT NULL,
+  auth TEXT NOT NULL,
+  created_at INTEGER NOT NULL DEFAULT (unixepoch())
+);
+
+-- Notificatie instellingen per gebruiker
+CREATE TABLE IF NOT EXISTS notification_settings (
+  user_id TEXT PRIMARY KEY REFERENCES "user"(id) ON DELETE CASCADE,
+  reminder_days INTEGER NOT NULL DEFAULT 3,
+  push_enabled INTEGER NOT NULL DEFAULT 0,
+  updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+);
+
+-- Openbaar profiel instelling
+CREATE TABLE IF NOT EXISTS public_profile (
+  user_id TEXT PRIMARY KEY REFERENCES "user"(id) ON DELETE CASCADE,
+  public_slug TEXT UNIQUE NOT NULL,
+  is_public INTEGER NOT NULL DEFAULT 1,
+  created_at INTEGER NOT NULL DEFAULT (unixepoch())
+);
+
+CREATE INDEX IF NOT EXISTS idx_push_user ON push_subscription(user_id);
+CREATE INDEX IF NOT EXISTS idx_public_slug ON public_profile(public_slug);

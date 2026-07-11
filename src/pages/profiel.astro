@@ -62,6 +62,29 @@ const currentBelt = profile?.belt ?? 'white';
       <button type="submit" class="btn btn-primary">Opslaan</button>
     </form>
 
+    <!-- Openbaar profiel -->
+    <div style="margin-top:24px;padding-top:20px;border-top:1px solid var(--border)">
+      <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:4px">Openbaar profiel</div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:12px">Deel je voortgang, belt en badges met anderen</div>
+      <div id="profile-link-box" style="display:none;background:var(--raised);border-radius:10px;padding:12px 14px;margin-bottom:10px;font-family:'Space Mono',monospace;font-size:12px;color:var(--text-dim);word-break:break-all"></div>
+      <div style="display:flex;gap:8px">
+        <button id="profile-public-btn" class="btn btn-ghost" style="flex:1">🌐 Maak openbaar</button>
+        <button id="profile-copy-btn" class="btn btn-ghost" style="flex:1;display:none">📋 Kopieer link</button>
+      </div>
+    </div>
+
+    <!-- Notificatie instellingen -->
+    <div style="margin-top:20px;padding-top:20px;border-top:1px solid var(--border)">
+      <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:4px">Trainingsherinnering</div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:12px">Herinnering na X dagen niet getraind</div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <input id="reminder-days" class="form-input" type="number" min="1" max="30" value="3" style="width:70px" />
+        <span style="font-size:13px;color:var(--text)">dagen</span>
+        <button id="save-reminder" class="btn btn-ghost" style="flex:1">Opslaan</button>
+      </div>
+      <div id="reminder-saved" style="display:none;font-size:12px;color:var(--green);margin-top:6px">✓ Opgeslagen</div>
+    </div>
+
     <!-- Wachtwoord wijzigen -->
     <div style="margin-top:24px;padding-top:20px;border-top:1px solid var(--border)">
       <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:12px">Wachtwoord wijzigen</div>
@@ -136,6 +159,55 @@ document.getElementById('logout-btn')?.addEventListener('click', async () => {
   await fetch('/api/auth/sign-out', { method: 'POST' });
   window.location.href = '/inloggen';
 });
+
+// Openbaar profiel
+(async () => {
+  const btn = document.getElementById('profile-public-btn') as HTMLButtonElement;
+  const copyBtn = document.getElementById('profile-copy-btn') as HTMLButtonElement;
+  const linkBox = document.getElementById('profile-link-box') as HTMLElement;
+
+  btn?.addEventListener('click', async () => {
+    btn.textContent = 'Aanmaken…'; btn.disabled = true;
+    const res = await fetch('/api/public-profile', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ is_public: true }),
+    });
+    const { slug } = await res.json();
+    const url = `https://bjjdagboek.nl/atleet/${slug}`;
+    linkBox.textContent = url;
+    linkBox.style.display = 'block';
+    btn.textContent = '✓ Openbaar';
+    copyBtn.style.display = 'block';
+  });
+
+  copyBtn?.addEventListener('click', () => {
+    navigator.clipboard.writeText(linkBox.textContent || '');
+    copyBtn.textContent = '✓ Gekopieerd!';
+    setTimeout(() => copyBtn.textContent = '📋 Kopieer link', 2000);
+  });
+})();
+
+// Notificatie instellingen laden
+(async () => {
+  const res = await fetch('/api/push/settings');
+  if (res.ok) {
+    const { reminder_days } = await res.json();
+    (document.getElementById('reminder-days') as HTMLInputElement).value = reminder_days;
+  }
+
+  document.getElementById('save-reminder')?.addEventListener('click', async () => {
+    const days = Number((document.getElementById('reminder-days') as HTMLInputElement).value);
+    await fetch('/api/push/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reminder_days: days }),
+    });
+    const msg = document.getElementById('reminder-saved')!;
+    msg.style.display = 'block';
+    setTimeout(() => msg.style.display = 'none', 2000);
+  });
+})();
 
 // Wachtwoord wijzigen
 document.getElementById('pw-form')?.addEventListener('submit', async (e) => {

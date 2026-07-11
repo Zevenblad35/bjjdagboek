@@ -3,11 +3,6 @@ import App from '../layouts/App.astro';
 import { createAuth } from '../lib/auth';
 import { getDB, getSecret } from '../lib/runtime';
 
-
-  
-  
-
-
 const db = getDB(); const auth = createAuth(db, getSecret());
 const session = await auth.api.getSession({ headers: Astro.request.headers });
 if (!session?.user) return Astro.redirect('/inloggen');
@@ -45,6 +40,27 @@ const { results: goals } = await db.prepare(
   "SELECT * FROM goal WHERE user_id = ? AND status != 'klaar' ORDER BY created_at DESC LIMIT 4"
 ).bind(user.id).all<{id:string;title:string;status:string}>();
 
+// Trainingsherinnering: laatste sessie datum
+const lastEntry = await db.prepare(
+  "SELECT date FROM entry WHERE user_id = ? ORDER BY date DESC LIMIT 1"
+).bind(user.id).first<{date:string}>();
+
+const notifSettings = await db.prepare(
+  "SELECT reminder_days FROM notification_settings WHERE user_id = ?"
+).bind(user.id).first<{reminder_days:number}>();
+
+const reminderDays = notifSettings?.reminder_days ?? 3;
+let daysSinceTraining = 0;
+let showReminder = false;
+if (lastEntry?.date) {
+  const last = new Date(lastEntry.date);
+  const now = new Date();
+  daysSinceTraining = Math.floor((now.getTime() - last.getTime()) / (1000 * 60 * 60 * 24));
+  showReminder = daysSinceTraining >= reminderDays;
+} else if (totalYear === 0) {
+  showReminder = false; // Nieuw account — geen reminder
+}
+
 const { results: entries } = await db.prepare(
   `SELECT e.*, GROUP_CONCAT(t.tag) as tags
    FROM entry e
@@ -67,8 +83,25 @@ function fmtDur(min: number) {
 ---
 <App title="Dashboard" page="home">
 
-  <!-- PWA install banner (verborgen, wordt zichtbaar via JS) -->
-  <div id="pwa-banner" style="display:none;margin:12px 20px 0;background:var(--blue);color:white;border-radius:14px;padding:14px 16px;display:none;align-items:center;gap:12px">
+  <!-- Trainingsherinnering (server-side bepaald) -->
+  {showReminder && (
+    <div id="reminder-banner" style="margin:12px 20px 0;background:#FFF7ED;border:1px solid #FDBA74;border-radius:14px;padding:14px 16px;display:flex;align-items:center;gap:12px">
+      <div style="font-size:24px">⏰</div>
+      <div style="flex:1">
+        <div style="font-size:13px;font-weight:700;color:#92400E;margin-bottom:2px">
+          {daysSinceTraining === 1 ? 'Gisteren' : `${daysSinceTraining} dagen`} niet getraind
+        </div>
+        <div style="font-size:12px;color:#B45309">Tijd om de mat op te gaan!</div>
+      </div>
+      <a href="/loggen" style="background:#F97316;color:white;border:none;padding:7px 12px;border-radius:8px;font-size:12px;font-weight:700;text-decoration:none;white-space:nowrap">
+        Log sessie
+      </a>
+      <button onclick="this.closest('#reminder-banner').remove()" style="background:none;border:none;color:#B45309;cursor:pointer;font-size:18px;padding:0;line-height:1;opacity:.6">×</button>
+    </div>
+  )}
+
+  <!-- PWA install banner -->
+  <div id="pwa-banner" style="display:none;margin:12px 20px 0;background:var(--blue);color:white;border-radius:14px;padding:14px 16px;align-items:center;gap:12px">
     <div style="font-size:24px">📲</div>
     <div style="flex:1">
       <div style="font-size:13px;font-weight:700;margin-bottom:2px">Installeer de app</div>
@@ -78,6 +111,19 @@ function fmtDur(min: number) {
       Installeer
     </button>
     <button id="pwa-dismiss-btn" style="background:none;border:none;color:rgba(255,255,255,.6);cursor:pointer;font-size:18px;padding:0;line-height:1">×</button>
+  </div>
+
+  <!-- Push notificatie banner (vraagt toestemming) -->
+  <div id="push-banner" style="display:none;margin:12px 20px 0;background:var(--green-bg);border:1px solid var(--green);border-radius:14px;padding:14px 16px;align-items:center;gap:12px">
+    <div style="font-size:24px">🔔</div>
+    <div style="flex:1">
+      <div style="font-size:13px;font-weight:700;color:var(--green);margin-bottom:2px">Trainingsherinneringen</div>
+      <div style="font-size:12px;color:var(--text-dim)">Ontvang een melding als je te lang niet getraind hebt</div>
+    </div>
+    <button id="push-enable-btn" style="background:var(--green);color:white;border:none;padding:7px 12px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:'Space Grotesk',sans-serif;white-space:nowrap">
+      Aanzetten
+    </button>
+    <button id="push-dismiss-btn" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:18px;padding:0;line-height:1">×</button>
   </div>
 
   <!-- Greeting -->
@@ -202,35 +248,106 @@ function fmtDur(min: number) {
 </App>
 
 <script>
-// PWA install banner logica
-const banner = document.getElementById('pwa-banner');
-const installBtn = document.getElementById('pwa-install-btn');
-const dismissBtn = document.getElementById('pwa-dismiss-btn');
+// ── PWA INSTALL BANNER ──
+const pwaBanner   = document.getElementById('pwa-banner');
+const installBtn  = document.getElementById('pwa-install-btn');
+const pwaDismiss  = document.getElementById('pwa-dismiss-btn');
 
-// Toon banner als installable event al getriggerd is
+// Toon direct als prompt beschikbaar is en niet eerder weggedrukt
 if ((window as any).__installPrompt && !localStorage.getItem('pwa_dismissed')) {
-  banner!.style.display = 'flex';
+  pwaBanner!.style.display = 'flex';
 }
-
-document.addEventListener('pwa:installable', () => {
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  (window as any).__installPrompt = e;
   if (!localStorage.getItem('pwa_dismissed')) {
-    banner!.style.display = 'flex';
+    pwaBanner!.style.display = 'flex';
   }
 });
-
 installBtn?.addEventListener('click', async () => {
   const prompt = (window as any).__installPrompt;
   if (!prompt) return;
   prompt.prompt();
   const { outcome } = await prompt.userChoice;
   if (outcome === 'accepted') {
-    banner!.style.display = 'none';
+    pwaBanner!.style.display = 'none';
     localStorage.setItem('pwa_dismissed', '1');
   }
 });
-
-dismissBtn?.addEventListener('click', () => {
-  banner!.style.display = 'none';
+pwaDismiss?.addEventListener('click', () => {
+  pwaBanner!.style.display = 'none';
   localStorage.setItem('pwa_dismissed', '1');
+});
+
+// ── PUSH NOTIFICATIES ──
+const pushBanner  = document.getElementById('push-banner');
+const pushEnable  = document.getElementById('push-enable-btn');
+const pushDismiss = document.getElementById('push-dismiss-btn');
+
+// Toon push banner als notificaties nog niet gevraagd zijn
+// en de app NIET als PWA draait (want dan al geïnstalleerd)
+async function checkPushBanner() {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+  if (localStorage.getItem('push_dismissed')) return;
+  if (Notification.permission === 'granted') return; // Al toegestaan
+  if (Notification.permission === 'denied') return;  // Al geweigerd
+
+  // Wacht even zodat de PWA banner voorrang heeft
+  await new Promise(r => setTimeout(r, 2000));
+
+  // Toon alleen als PWA banner niet zichtbaar is
+  if (pwaBanner!.style.display !== 'flex') {
+    pushBanner!.style.display = 'flex';
+  }
+}
+checkPushBanner();
+
+function urlBase64ToUint8Array(base64String: string) {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) outputArray[i] = rawData.charCodeAt(i);
+  return outputArray;
+}
+
+pushEnable?.addEventListener('click', async () => {
+  pushBanner!.style.display = 'none';
+  try {
+    const permission = await Notification.requestPermission();
+    if (permission !== 'granted') return;
+
+    const sw = await navigator.serviceWorker.ready;
+    const keyRes = await fetch('/api/push/vapid-key');
+    const { key } = await keyRes.json();
+
+    const sub = await sw.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(key),
+    });
+
+    const subJson = sub.toJSON();
+    await fetch('/api/push/subscribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        endpoint: subJson.endpoint,
+        keys: subJson.keys,
+      }),
+    });
+
+    // Toon bevestiging
+    await sw.showNotification('BJJ Dagboek', {
+      body: '🔔 Trainingsherinneringen staan aan!',
+      icon: '/icons/icon-192.png',
+    });
+  } catch (err) {
+    console.error('Push subscription mislukt:', err);
+  }
+});
+
+pushDismiss?.addEventListener('click', () => {
+  pushBanner!.style.display = 'none';
+  localStorage.setItem('push_dismissed', '1');
 });
 </script>

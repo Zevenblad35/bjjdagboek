@@ -1,0 +1,119 @@
+---
+import Auth from '../../layouts/Auth.astro';
+import { getDB, getSecret } from '../../lib/runtime';
+import { BADGES, calcEarnedBadges, calcPoints } from '../../lib/badges';
+
+const db = getDB();
+const { slug } = Astro.params;
+
+// Vind het openbare profiel
+const pub = await db.prepare(
+  'SELECT * FROM public_profile WHERE public_slug = ? AND is_public = 1'
+).bind(slug).first<{user_id:string;public_slug:string}>();
+
+if (!pub) return Astro.redirect('/');
+
+// Haal gebruikersdata op
+const user = await db.prepare(
+  'SELECT name FROM "user" WHERE id = ?'
+).bind(pub.user_id).first<{name:string}>();
+
+const profile = await db.prepare(
+  'SELECT belt, stripes FROM profile WHERE user_id = ?'
+).bind(pub.user_id).first<{belt:string;stripes:number}>();
+
+// Stats
+const { results: entries } = await db.prepare(
+  'SELECT type, duration_min FROM entry WHERE user_id = ?'
+).bind(pub.user_id).all<{type:string;duration_min:number}>();
+
+const { results: goalsDone } = await db.prepare(
+  "SELECT id FROM goal WHERE user_id = ? AND status = 'klaar'"
+).bind(pub.user_id).all();
+
+const stats = {
+  entries: entries.length,
+  hours: Math.floor(entries.reduce((s,e) => s + (e.duration_min||0), 0) / 60),
+  seminars: entries.filter(e => e.type === 'seminar').length,
+  competitions: entries.filter(e => e.type === 'competitie').length,
+  goals_done: goalsDone.length,
+  belt: profile?.belt ?? 'white',
+  stripes: profile?.stripes ?? 0,
+};
+
+const earnedIds = calcEarnedBadges(stats);
+const points = calcPoints(earnedIds);
+
+const beltNL: Record<string,string> = { white:'Wit', blue:'Blauw', purple:'Paars', brown:'Bruin', black:'Zwart' };
+const beltColors: Record<string,string> = {
+  white:'#f7f9fa', blue:'#2e96ff', purple:'#7e1cc9', brown:'#a35e2c', black:'#1a1817'
+};
+
+const earnedBadges = BADGES.filter(b => earnedIds.includes(b.id));
+const initials = (user?.name ?? 'A').split(' ').map(n => n[0]).join('').slice(0,2).toUpperCase();
+---
+<Auth title={`${user?.name ?? 'Atleet'} — BJJ Dagboek`}>
+<div style="min-height:100dvh;background:#F2F5FB;font-family:'Space Grotesk',sans-serif">
+  <!-- Header -->
+  <div style="background:var(--blue, #1A3A6B);padding:40px 24px 32px;text-align:center">
+    <div style="width:72px;height:72px;border-radius:50%;background:rgba(255,255,255,.15);display:grid;place-items:center;font-size:24px;font-weight:700;color:white;margin:0 auto 12px;letter-spacing:.05em">
+      {initials}
+    </div>
+    <div style="font-size:22px;font-weight:700;color:white;margin-bottom:6px">{user?.name}</div>
+    <div style="display:flex;align-items:center;justify-content:center;gap:8px">
+      <div style={`width:5px;height:28px;border-radius:2px;background:${beltColors[stats.belt]}`}></div>
+      <div style="font-size:14px;color:rgba(255,255,255,.8)">{beltNL[stats.belt]} belt</div>
+      {stats.stripes > 0 && (
+        <div style="display:flex;gap:3px">
+          {Array.from({length: stats.stripes}).map(() => (
+            <div style="width:12px;height:4px;border-radius:1px;background:rgba(255,255,255,.7)"></div>
+          ))}
+        </div>
+      )}
+    </div>
+    <div style="font-size:13px;color:rgba(255,255,255,.6);margin-top:6px;font-family:'Space Mono',monospace">
+      {points} punten · {earnedBadges.length} badges
+    </div>
+  </div>
+
+  <div style="padding:20px">
+    <!-- Stats -->
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:20px">
+      {[
+        [stats.entries, 'Sessies'],
+        [stats.hours + 'u', 'Mat uren'],
+        [stats.goals_done, 'Doelen'],
+      ].map(([val, label]) => (
+        <div style="background:white;border-radius:12px;padding:14px;text-align:center;box-shadow:0 1px 3px rgba(0,0,0,.06)">
+          <div style="font-size:22px;font-weight:700;color:#1A3A6B">{val}</div>
+          <div style="font-size:11px;color:#9AA3BC;font-family:'Space Mono',monospace;margin-top:2px">{label}</div>
+        </div>
+      ))}
+    </div>
+
+    <!-- Badges -->
+    {earnedBadges.length > 0 && (
+      <div style="background:white;border-radius:14px;padding:16px;margin-bottom:20px;box-shadow:0 1px 3px rgba(0,0,0,.06)">
+        <div style="font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#9AA3BC;font-family:'Space Mono',monospace;margin-bottom:12px">
+          Badges
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">
+          {earnedBadges.map(b => (
+            <div style="text-align:center" title={b.title}>
+              <div style="font-size:28px;margin-bottom:3px">{b.icon}</div>
+              <div style="font-size:9px;color:#9AA3BC;font-family:'Space Mono',monospace;line-height:1.2">{b.title}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    )}
+
+    <!-- Footer -->
+    <div style="text-align:center;margin-top:24px">
+      <a href="https://bjjdagboek.nl" style="font-family:'Space Mono',monospace;font-size:11px;color:#9AA3BC;text-decoration:none;letter-spacing:.06em">
+        ⬡ BJJ DAGBOEK
+      </a>
+    </div>
+  </div>
+</div>
+</Auth>
