@@ -2,16 +2,15 @@
 import App from '../layouts/App.astro';
 import { createAuth } from '../lib/auth';
 import { getDB, getSecret } from '../lib/runtime';
-
-
-  
-  
+import { isAdmin } from '../lib/admin';
 
 const db = getDB(); const auth = createAuth(db, getSecret());
 const session = await auth.api.getSession({ headers: Astro.request.headers });
 if (!session?.user) return Astro.redirect('/inloggen');
 
 const user = session.user;
+const userIsAdmin = isAdmin(user.email);
+
 const profile = await db.prepare(
   'SELECT * FROM profile WHERE user_id = ?'
 ).bind(user.id).first<{belt:string;stripes:number;gym:string}>();
@@ -85,22 +84,18 @@ const currentBelt = profile?.belt ?? 'white';
       <button id="logout-btn" class="btn btn-ghost" style="width:100%">Uitloggen</button>
     </div>
 
-    <!-- Admin link (alleen zichtbaar voor admin) -->
-    <div id="admin-link" style="display:none;margin-top:8px">
-      <a href="/admin" style="display:flex;align-items:center;justify-content:center;gap:6px;color:var(--muted);font-size:12px;text-decoration:none;padding:8px">
-        ⚙️ Admin dashboard
-      </a>
-    </div>
+    <!-- Admin link (alleen voor admin) -->
+    {userIsAdmin && (
+      <div style="margin-top:8px">
+        <a href="/admin" style="display:flex;align-items:center;justify-content:center;gap:6px;color:var(--muted);font-size:12px;text-decoration:none;padding:8px">
+          ⚙️ Admin dashboard
+        </a>
+      </div>
+    )}
   </div>
 </App>
 
 <script>
-// Toon admin link als de gebruiker admin is
-fetch('/api/auth/get-session').then(r => r.json()).then(data => {
-  if (data?.user?.email === 'peter@peterrutgersmedia.nl') {
-    document.getElementById('admin-link')!.style.display = 'block';
-  }
-}).catch(() => {});
 document.getElementById('profile-form')?.addEventListener('submit', async (e) => {
   e.preventDefault();
   const form = e.target as HTMLFormElement;
@@ -174,5 +169,3 @@ document.getElementById('pw-form')?.addEventListener('submit', async (e) => {
   btn.textContent = 'Wachtwoord wijzigen'; btn.disabled = false;
 });
 </script>
-
-<!-- Wachtwoord wijzigen sectie — toegevoegd door update -->
